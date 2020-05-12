@@ -39,78 +39,67 @@ static void ctrlapi_ping (afb_req_t request) {
     return;
 }
 
-#define REDIS_CMD_MAX_LEN 512
 
-static void appendToRedisCmd(char * s, const char * item) {
-    strncat(s, item, REDIS_CMD_MAX_LEN - strlen(s) -1);
+static int redisPutRetention(afb_req_t request, uint32_t retention, int * argc, char ** argv, size_t * argvlen) {
+
+    argv[*argc] = strdup("RETENTION");
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+    asprintf(&argv[*argc], "%d", retention);
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    return 0;
 }
 
-#define REMAIN(m, s) (m - strlen(s) - 1)
 
-static void redis_create (afb_req_t request) {
-    json_object *argsJ = afb_req_json(request);
-    char * rkey;
+static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -1;
+    enum json_type type;
 
-    uint32_t retention = 0;
-    json_object * labelsJ = NULL;
-    bool uncompressed  = false;
+    argv[*argc] = strdup("LABELS");
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
 
-    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    json_object_object_foreach(labelsJ, key, val) {
+        type = json_object_get_type(val);
+        switch (type) {
+        case json_type_string: 
+            argv[*argc] = strdup(key);
+            argvlen[*argc] = strlen(argv[*argc]);
+            (*argc)++;
+            argv[*argc] = strdup(json_object_get_string(val));
+            argvlen[*argc] = strlen(argv[*argc]);
+            (*argc)++;
+            break;
 
-    int err = wrap_json_unpack(argsJ, "{s:s,s?i,s?b,s?o !}", 
-        "key", &rkey,
-        "retention", &retention,
-        "uncompressed", &uncompressed,
-        "labels", &labelsJ
-        );
-    if (err) {
-        afb_req_fail_f(request, "parse-error", "json error in %s)", json_object_get_string(argsJ));
-        goto fail;
-    }
-
-    char redisCommandS[REDIS_CMD_MAX_LEN];
-    redisCommandS[0] = '\0';
-    appendToRedisCmd(redisCommandS, rkey);
-
-    if (retention) {
-        char retentionS[16]; /* is enough to print 2^32 */
-        sprintf(retentionS, "%d", retention);
-        appendToRedisCmd(redisCommandS, " RETENTION ");
-        appendToRedisCmd(redisCommandS, retentionS);
-    }
-
-    if (uncompressed) {
-        appendToRedisCmd(redisCommandS, " UNCOMPRESSED ");
-    }
-
-    if (labelsJ) {
-        enum json_type type;
-
-        appendToRedisCmd(redisCommandS, " LABELS ");
-
-        json_object_object_foreach(labelsJ, key, val) {
-            type = json_object_get_type(val);
-            switch (type) {
-            case json_type_string: {
-                appendToRedisCmd(redisCommandS, key);
-                appendToRedisCmd(redisCommandS, " ");
-                appendToRedisCmd(redisCommandS, json_object_get_string(val));
-                appendToRedisCmd(redisCommandS, " ");
-                break;
-            }
-            
-            default:
-                afb_req_fail_f(request, "invalid-syntax", "labels must be a string (given:%s)", json_object_get_string(val));
-                goto fail;
-                break;
-            }
+        case json_type_int: {
+            argv[*argc] = strdup(key);
+            argvlen[*argc] = strlen(argv[*argc]);
+            (*argc)++;
+            asprintf(&argv[*argc], "%d", json_object_get_int(val));
+            argvlen[*argc] = strlen(argv[*argc]);
+            (*argc)++;
+            break;
         }
-
+        
+        default:
+            afb_req_fail_f(request, "invalid-syntax", "labels must be a string or an int (given:%s)", json_object_get_string(val));
+            goto fail;
+            break;
+        }
     }
 
-    AFB_API_DEBUG(request->api, "Redis create: %s", redisCommandS);
+    ret = 0;
+fail:    
+    return ret;
 
-    redisReply * rep = redisCommand(currentRedisContext, "TS.CREATE %s", redisCommandS);
+}
+
+static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen) {
+    int ret = -1;
+    
+    redisReply * rep = redisCommandArgv(currentRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
         afb_req_fail_f(request, "redis-error", "redis command failed");
     	goto fail;
@@ -122,18 +111,200 @@ static void redis_create (afb_req_t request) {
     }
 
     AFB_API_DEBUG(request->api, "Redis Command reply: %s", rep->str);
+    ret = 0;
+fail:    
+    return ret;
+}
+
+
+static void redis_create (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    char * rkey = NULL;
+    int32_t retention = 0;
+    uint32_t uncompressed = false;
+    json_object * labelsJ = NULL;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?b,s?o !}", 
+        "key", &rkey,
+        "retention", &retention,
+        "uncompressed", &uncompressed,
+        "labels", &labelsJ
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 2; /* one slot for command name, one for the key */
+    
+    if (retention)
+        argc += 2;
+
+    if (uncompressed)
+        argc++;
+
+    if (labelsJ) {
+        argc++;
+        json_object_object_foreach(labelsJ, key, val) {
+            (void) val;
+            (void) key;
+            argc += 2;
+        }
+    }
+
+    argv = calloc(argc, sizeof(char*));
+    if (argv == 0) {
+        afb_req_fail_f(request, "mem-error", "insufficient memory");
+        goto fail;
+    }
+
+    argvlen = calloc(argc, sizeof(size_t));
+    if (argvlen == 0) {
+        afb_req_fail_f(request, "mem-error", "insufficient memory");
+        goto fail;
+    }
+
+    argc = 0;
+    argv[argc++] = strdup("TS.CREATE");
+    argv[argc++] = strdup(rkey);
+
+    if (retention) 
+        if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
+            goto fail;
+        }
+
+    if (uncompressed) {
+        argv[argc++] = strdup("UNCOMPRESSED");
+    }
+
+    if (labelsJ) {
+        if (redisPutLabels(request, labelsJ, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
+            goto fail;
+        }
+    }
+
+    if (redis_send_cmd(request, argc, (const char **)argv, 0) != 0)
+        goto fail;
 
     afb_req_success(request, NULL, NULL);
     return;
 
 fail:
+    if (argv)
+        free(argv);
+    if (argvlen)
+        free(argvlen);
     return;
 }
 
 static void redis_add (afb_req_t request) {
+
     json_object *argsJ = afb_req_json(request);
+
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    char * rkey;
+    uint32_t retention = 0;
+    uint32_t uncompressed  = false;
+    json_object * labelsJ = NULL;
+    char * timestamp;
+    double value;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s?s,s:F,s?i,s?b,s?o !}", 
+        "key", &rkey,
+        "timestamp", &timestamp,
+        "value", &value,
+        "retention", &retention,
+        "uncompressed", &uncompressed,
+        "labels", &labelsJ
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 2; /* one slot for command name, one for the key */
+    
+    if (retention)
+        argc += 2;
+
+    if (uncompressed)
+        argc++;
+
+    if (labelsJ) {
+        argc++;
+        json_object_object_foreach(labelsJ, key, val) {
+            (void) val;
+            (void) key;
+            argc += 2;
+        }
+    }
+
+    argv = calloc(argc, sizeof(char*));
+    if (argv == 0) {
+        afb_req_fail_f(request, "mem-error", "insufficient memory");
+        goto fail;
+    }
+
+    argvlen = calloc(argc, sizeof(size_t));
+    if (argvlen == 0) {
+        afb_req_fail_f(request, "mem-error", "insufficient memory");
+        goto fail;
+    }
+
+    argc = 0;
+    argv[argc] = strdup("TS.ADD");
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+    argv[argc] = strdup(rkey);
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+    argv[argc] = strdup(timestamp);
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+    asprintf(&argv[argc], "%f", value);
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    if (retention) 
+        if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
+            goto fail;
+        }
+
+    if (uncompressed) {
+        argv[argc++] = strdup("UNCOMPRESSED");
+    }
+
+    if (labelsJ) {
+        if (redisPutLabels(request, labelsJ, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
+            goto fail;
+        }
+    }
+
+    if (redis_send_cmd(request, argc, (const char **)argv, 0) != 0)
+        goto fail;
+
     afb_req_success(request, NULL, NULL);
+    return;
+fail:
+    if (argv)
+        free(argv);
+    if (argvlen)
+        free(argvlen);
+
+    return;
 }
 
 static void redis_range (afb_req_t request) {
