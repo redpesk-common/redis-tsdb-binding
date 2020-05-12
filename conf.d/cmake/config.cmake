@@ -90,6 +90,10 @@ set (PKG_REQUIRED_LIST
 # -----------------------------
 #list(APPEND link_libraries -an-option)
 
+set(COMPILE_OPTIONS
+	-Werror
+	-Wall)
+
 # Compilation options definition
 # Use CMake generator expressions to specify only for a specific language
 # Values are prefilled with default options that is currently used.
@@ -202,7 +206,7 @@ set(AFB_REMPORT "1234" CACHE PATH "Default binder listening port")
 
 # Print a helper message when every thing is finished
 # ----------------------------------------------------
-set(CLOSING_MESSAGE "Typical binding launch: afb-daemon --name redis-binding --port=${AFB_REMPORT} --workdir=${CMAKE_BINARY_DIR} --ldpath=/dev/null --binding=package/lib/redis-binding.so --roothttp=package/htdocs --token=\"${AFB_TOKEN}\" --tracereq=common --verbose")
+set(CLOSING_MESSAGE "Typical binding launch: afb-daemon --name redis --port=${AFB_REMPORT} --workdir=${CMAKE_BINARY_DIR} --ldpath=/dev/null --binding=package/lib/redis-binding.so --roothttp=package/htdocs --token=\"${AFB_TOKEN}\" --tracereq=common --verbose")
 set(PACKAGE_MESSAGE "Install widget file using in the target : afm-util install ${PROJECT_NAME}.wgt")
 
 # Optional schema validator about now only XML, LUA and JSON
