@@ -10,6 +10,7 @@
 #include <hiredis.h>
 #include <time.h>
 #include <stdbool.h>
+#include <errno.h>
 
 // default api to print log when apihandle not available
 afb_api_t AFB_default;
@@ -41,23 +42,49 @@ static void ctrlapi_ping (afb_req_t request) {
 
 
 static int redisPutRetention(afb_req_t request, uint32_t retention, int * argc, char ** argv, size_t * argvlen) {
+    int ret = ENOMEM;
 
     argv[*argc] = strdup("RETENTION");
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-    asprintf(&argv[*argc], "%d", retention);
+    if (argv[*argc] == NULL)
+        goto nomem;
     argvlen[*argc] = strlen(argv[*argc]);
     (*argc)++;
 
-    return 0;
+    if (asprintf(&argv[*argc], "%d", retention) == -1)
+        goto nomem;
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    ret = 0;
+nomem:
+    return ret;
+}
+
+static int redisPutUncompressed(int * argc, char ** argv, size_t * argvlen) {
+    int ret = ENOMEM;
+    argv[*argc] = strdup("UNCOMPRESSED");
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    ret = 0;
+nomem:
+    return ret;
 }
 
 
 static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, char ** argv, size_t * argvlen) {
-    int ret = -1;
+    int ret = EINVAL;
     enum json_type type;
 
+    AFB_API_INFO (request->api, "%s: put labels", __func__);
+
     argv[*argc] = strdup("LABELS");
+    if (argv[*argc] == NULL)
+        goto nomem;
+
     argvlen[*argc] = strlen(argv[*argc]);
     (*argc)++;
 
@@ -66,18 +93,28 @@ static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, 
         switch (type) {
         case json_type_string: 
             argv[*argc] = strdup(key);
+            if (argv[*argc] == NULL)
+                goto nomem;
             argvlen[*argc] = strlen(argv[*argc]);
             (*argc)++;
+
             argv[*argc] = strdup(json_object_get_string(val));
+            if (argv[*argc] == NULL)
+                goto nomem;
+
             argvlen[*argc] = strlen(argv[*argc]);
             (*argc)++;
             break;
 
         case json_type_int: {
             argv[*argc] = strdup(key);
+            if (argv[*argc] == NULL)
+                goto nomem;
             argvlen[*argc] = strlen(argv[*argc]);
             (*argc)++;
-            asprintf(&argv[*argc], "%d", json_object_get_int(val));
+
+            if (asprintf(&argv[*argc], "%d", json_object_get_int(val)) == -1)
+                goto nomem;
             argvlen[*argc] = strlen(argv[*argc]);
             (*argc)++;
             break;
@@ -91,7 +128,11 @@ static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, 
     }
 
     ret = 0;
-fail:    
+    goto done;
+nomem:
+    ret = ENOMEM;
+fail:
+done:
     return ret;
 
 }
@@ -99,6 +140,8 @@ fail:
 static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen) {
     int ret = -1;
     
+    AFB_API_INFO (request->api, "%s: send cmd", __func__);
+
     redisReply * rep = redisCommandArgv(currentRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
         afb_req_fail_f(request, "redis-error", "redis command failed");
@@ -116,6 +159,21 @@ fail:
     return ret;
 }
 
+
+static void argvCleanup(int argc, char ** argv, size_t * argvlen) {
+    int ix;
+    if (argv) {
+        for (ix=0; ix < argc; ix++) {
+            if (argv[ix])
+                free(argv[ix]);
+        }
+        free(argv);
+    }
+
+    if (argvlen)
+        free(argvlen);
+
+}
 
 static void redis_create (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
@@ -158,49 +216,60 @@ static void redis_create (afb_req_t request) {
     }
 
     argv = calloc(argc, sizeof(char*));
-    if (argv == 0) {
-        afb_req_fail_f(request, "mem-error", "insufficient memory");
-        goto fail;
-    }
+    if (argv == NULL)
+        goto nomem;
 
     argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == 0) {
-        afb_req_fail_f(request, "mem-error", "insufficient memory");
-        goto fail;
-    }
+    if (argvlen == NULL)
+        goto nomem;
 
     argc = 0;
-    argv[argc++] = strdup("TS.CREATE");
-    argv[argc++] = strdup(rkey);
+    argv[argc] = strdup("TS.CREATE");
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    argv[argc] = strdup(rkey);
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
 
     if (retention) 
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
-            goto fail;
+            goto nomem;
         }
 
     if (uncompressed) {
-        argv[argc++] = strdup("UNCOMPRESSED");
+        redisPutUncompressed(&argc, argv, argvlen);
     }
 
     if (labelsJ) {
-        if (redisPutLabels(request, labelsJ, &argc, argv, argvlen) != 0) {
+        int ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
+        if (ret != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
+            if (ret == ENOMEM)
+                goto nomem;
             goto fail;
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, 0) != 0)
+    if (redis_send_cmd(request, argc, (const char **)argv, argvlen) != 0)
         goto fail;
 
     afb_req_success(request, NULL, NULL);
-    return;
+    goto done;
 
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
 fail:
-    if (argv)
-        free(argv);
-    if (argvlen)
-        free(argvlen);
+done:
+    argvCleanup(argc, argv, argvlen);
+
     return;
 }
 
@@ -233,7 +302,7 @@ static void redis_add (afb_req_t request) {
         goto fail;
     }
 
-    int argc = 2; /* one slot for command name, one for the key */
+    int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestemp, and 1 for value */
     
     if (retention)
         argc += 2;
@@ -251,59 +320,78 @@ static void redis_add (afb_req_t request) {
     }
 
     argv = calloc(argc, sizeof(char*));
-    if (argv == 0) {
-        afb_req_fail_f(request, "mem-error", "insufficient memory");
-        goto fail;
+    if (argv == NULL) {
+        goto nomem;
     }
 
     argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == 0) {
-        afb_req_fail_f(request, "mem-error", "insufficient memory");
-        goto fail;
+    if (argvlen == NULL) {
+        goto nomem;
     }
 
     argc = 0;
     argv[argc] = strdup("TS.ADD");
+    if (argv[argc] == NULL)
+        goto nomem;
     argvlen[argc] = strlen(argv[argc]);
     argc++;
+
     argv[argc] = strdup(rkey);
+    if (argv[argc] == NULL)
+        goto nomem;
+
     argvlen[argc] = strlen(argv[argc]);
     argc++;
+
+    AFB_API_INFO (request->api, "%s: put ts", __func__);
+
     argv[argc] = strdup(timestamp);
+    if (argv[argc] == NULL)
+        goto nomem;
+
     argvlen[argc] = strlen(argv[argc]);
     argc++;
-    asprintf(&argv[argc], "%f", value);
+
+    if (asprintf(&argv[argc], "%f", value) == -1)
+        goto nomem;
+
     argvlen[argc] = strlen(argv[argc]);
     argc++;
 
     if (retention) 
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
-            goto fail;
+            goto nomem;
         }
 
     if (uncompressed) {
-        argv[argc++] = strdup("UNCOMPRESSED");
+        if (redisPutUncompressed(&argc, argv, argvlen) != 0)
+            goto nomem;
     }
 
     if (labelsJ) {
-        if (redisPutLabels(request, labelsJ, &argc, argv, argvlen) != 0) {
+        int ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
+        if (ret != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
+            if (ret == ENOMEM)
+                goto nomem;
             goto fail;
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, 0) != 0)
+    if (redis_send_cmd(request, argc, (const char **)argv, argvlen) != 0)
         goto fail;
 
     afb_req_success(request, NULL, NULL);
-    return;
-fail:
-    if (argv)
-        free(argv);
-    if (argvlen)
-        free(argvlen);
+    goto done;
 
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+done:
+    argvCleanup(argc, argv, argvlen);
     return;
 }
 
