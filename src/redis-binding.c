@@ -137,7 +137,167 @@ done:
 
 }
 
-static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen) {
+
+static int redisPutAggregation(afb_req_t request, json_object * aggregationJ, int * argc, char ** argv, size_t * argvlen) {
+    int ret = EINVAL;
+    char * aggregationType = NULL;
+    uint32_t bucket = 0;
+
+    if (!aggregationJ)
+        goto fail;
+
+    int err = wrap_json_unpack(aggregationJ, "{ss,si !}",
+        "type", &aggregationType,
+        "bucket", &bucket
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(aggregationJ));
+        goto fail;
+    }
+
+    argv[*argc] = strdup("AGGREGATION");
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    argv[*argc] = strdup(aggregationType);
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    if (asprintf(&argv[*argc], "%d", bucket) == -1)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    ret = 0;
+    goto done;
+nomem:
+    ret = ENOMEM;
+fail:
+done:
+    return ret;
+}
+
+
+/*
+#define REDIS_REPLY_STRING 1
+#define REDIS_REPLY_ARRAY 2
+#define REDIS_REPLY_INTEGER 3
+#define REDIS_REPLY_NIL 4
+#define REDIS_REPLY_STATUS 5
+#define REDIS_REPLY_ERROR 6
+#define REDIS_REPLY_DOUBLE 7
+#define REDIS_REPLY_BOOL 8
+#define REDIS_REPLY_VERB 9
+#define REDIS_REPLY_MAP 9
+#define REDIS_REPLY_SET 10
+#define REDIS_REPLY_ATTR 11
+#define REDIS_REPLY_PUSH 12
+#define REDIS_REPLY_BIGNUM 13
+*/
+
+#define XSTR(s) str(s)
+#define str(s) #s
+
+#define REDIS_REPLY_CASE(suffix) case REDIS_REPLY_##suffix: _s=XSTR(suffix); break;
+
+#define REDIS_REPLY_TYPE_STR(redis_type) ({ \
+    char * _s = NULL; \
+    switch(redis_type) {\
+        REDIS_REPLY_CASE(STRING);\
+        REDIS_REPLY_CASE(ARRAY);\
+        REDIS_REPLY_CASE(INTEGER);\
+        REDIS_REPLY_CASE(NIL);\
+        REDIS_REPLY_CASE(STATUS);\
+        REDIS_REPLY_CASE(ERROR);\
+        REDIS_REPLY_CASE(DOUBLE);\
+        REDIS_REPLY_CASE(BOOL);\
+        REDIS_REPLY_CASE(MAP);\
+        REDIS_REPLY_CASE(SET);\
+        REDIS_REPLY_CASE(ATTR);\
+        REDIS_REPLY_CASE(PUSH);\
+        REDIS_REPLY_CASE(BIGNUM);\
+        default: break;\
+    }\
+    _s;\
+})
+
+static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_object ** replyJ ) {
+    int ret = EINVAL;
+    if (!reply)
+        goto fail;
+    if (!replyJ)
+        goto fail;
+
+    *replyJ = NULL;
+
+    AFB_API_INFO (request->api, "%s: convert type %s", __func__, REDIS_REPLY_TYPE_STR(reply->type));
+
+    switch (reply->type)
+    {
+    case REDIS_REPLY_ARRAY: {
+        int ix;
+        json_object * arrayJ = json_object_new_array();
+        if (!arrayJ)
+            goto nomem;
+        for (ix = 0; ix < reply->elements; ix++) {
+            redisReply * element = reply->element[ix];
+            json_object * objectJ = NULL;
+            ret = redisReplyToJson(request, element, &objectJ);
+            if (ret != 0)
+                goto fail;
+            if (objectJ != 0)
+                json_object_array_add(arrayJ, objectJ);
+        }
+        //json_object_object_add(*replyJ, "v", arrayJ);
+        *replyJ = arrayJ;
+        break;
+    }
+
+    case REDIS_REPLY_INTEGER: {
+        AFB_API_INFO (request->api, "%s: got int %lld", __func__, reply->integer);
+        json_object * intJ = json_object_new_int64(reply->integer);
+        if (!intJ)
+            goto nomem;
+        // json_object_object_add(*replyJ, "v", intJ);
+        *replyJ = intJ;
+        break;
+    }
+
+    case REDIS_REPLY_STRING: {
+        AFB_API_INFO (request->api, "%s: got string %s", __func__, reply->str);
+        json_object * strJ = json_object_new_string(reply->str);
+        if (!strJ)
+            goto nomem;
+        *replyJ = strJ;
+        break;
+    }
+
+    default:
+        AFB_API_INFO (request->api, "%s: Unhandled result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(reply->type), reply->str);
+        goto fail;
+        break;
+    }
+
+    ret = 0;
+    goto done;
+nomem:
+    ret = ENOMEM;
+fail:
+    if (*replyJ)
+        free(*replyJ);
+done:
+    return ret;
+}
+
+
+static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -1;
     
     AFB_API_INFO (request->api, "%s: send cmd", __func__);
@@ -148,12 +308,27 @@ static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const
     	goto fail;
     }
 
+    AFB_API_INFO (request->api, "%s: cmd result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(rep->type), rep->str);
+
     if (rep->type == REDIS_REPLY_ERROR) {
-        afb_req_fail_f(request, "redis-error", "redis command error: %s failed", rep->str);
+        if (resstr)
+            asprintf(resstr, "redis_command error %s", rep->str);
+
     	goto fail;
     }
 
-    AFB_API_DEBUG(request->api, "Redis Command reply: %s", rep->str);
+    if (!replyJ)
+        goto done;
+
+    ret = redisReplyToJson(request, rep, replyJ);
+    if (ret != 0 || *replyJ == NULL) {
+        asprintf(resstr, "failed to convert reply to json");
+        goto fail;
+    }
+
+    AFB_API_INFO (request->api, "%s: json result %s", __func__, json_object_get_string(*replyJ));
+
+done:
     ret = 0;
 fail:    
     return ret;
@@ -184,6 +359,7 @@ static void redis_create (afb_req_t request) {
 
     char ** argv = NULL;
     size_t * argvlen = NULL;
+    char * resstr = NULL;
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
@@ -258,8 +434,10 @@ static void redis_create (afb_req_t request) {
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, argvlen) != 0)
+    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) != 0) {
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
         goto fail;
+    }
 
     afb_req_success(request, NULL, NULL);
     goto done;
@@ -268,6 +446,10 @@ nomem:
     afb_req_fail_f(request, "mem-error", "insufficient memory");
 fail:
 done:
+
+    if (resstr)
+        free(resstr);
+
     argvCleanup(argc, argv, argvlen);
 
     return;
@@ -288,6 +470,7 @@ static void redis_add (afb_req_t request) {
 
     char ** argv = NULL;
     size_t * argvlen = NULL;
+    char * resstr = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s,s?s,s:F,s?i,s?b,s?o !}", 
         "key", &rkey,
@@ -343,8 +526,6 @@ static void redis_add (afb_req_t request) {
     argvlen[argc] = strlen(argv[argc]);
     argc++;
 
-    AFB_API_INFO (request->api, "%s: put ts", __func__);
-
     argv[argc] = strdup(timestamp);
     if (argv[argc] == NULL)
         goto nomem;
@@ -379,8 +560,10 @@ static void redis_add (afb_req_t request) {
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, argvlen) != 0)
+    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) != 0) {
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
         goto fail;
+    }
 
     afb_req_success(request, NULL, NULL);
     goto done;
@@ -391,14 +574,134 @@ nomem:
 fail:
 
 done:
+    if (resstr)
+        free(resstr);
+
     argvCleanup(argc, argv, argvlen);
     return;
 }
 
 static void redis_range (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
+
+    char * rkey;
+    char * fromtimestamp;
+    char * totimestamp;
+    uint32_t count = 0;
+    json_object * aggregationJ = NULL;
+    json_object * replyJ = NULL;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr;
+
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s:s,s:s,s?i,s?o !}", 
+        "key", &rkey,
+        "fromts", &fromtimestamp,
+        "tots", &totimestamp,
+        "count", &count,
+        "aggregation", &aggregationJ
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 4; // 1 cmd, 1 key, 2 timestamp, 
+
+    if (count != 0)
+        argc++;
+
+    if (aggregationJ)
+        argc++;
+
+    argv = calloc(argc, sizeof(char*));
+    if (argv == NULL) {
+        goto nomem;
+    }
+
+    argvlen = calloc(argc, sizeof(size_t));
+    if (argvlen == NULL) {
+        goto nomem;
+    }
+
+    argc = 0;
+    argv[argc] = strdup("TS.RANGE");
+    if (argv[argc] == NULL)
+        goto nomem;
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    argv[argc] = strdup(rkey);
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    argv[argc] = strdup(fromtimestamp);
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    argv[argc] = strdup(totimestamp);
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    if (count != 0) {
+        argv[argc] = strdup("COUNT");
+        if (argv[argc] == NULL)
+            goto nomem;
+        argvlen[argc] = strlen(argv[argc]);
+        argc++;
+
+        if (asprintf(&argv[argc], "%d", count) == -1)
+            goto nomem;
+        argvlen[argc] = strlen(argv[argc]);
+        argc++;
+
+    }
+
+    if (aggregationJ) {
+        int ret;
+        ret = redisPutAggregation(request, aggregationJ, &argc, argv, argvlen);
+        if (ret != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put aggregation %s", __func__, json_object_get_string(aggregationJ));
+            if (ret == ENOMEM)
+                goto nomem;
+            goto fail;
+        }
+    }
+
+    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr) != 0) {
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, replyJ, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+done:
+
+    if (replyJ)
+        free(replyJ);
+
+    if (resstr)
+        free(resstr);
+
+    argvCleanup(argc, argv, argvlen);
+    return;
 }
 
 static void redis_alter (afb_req_t request) {
