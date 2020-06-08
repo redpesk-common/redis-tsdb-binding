@@ -192,14 +192,6 @@ done:
 #define REDIS_REPLY_NIL 4
 #define REDIS_REPLY_STATUS 5
 #define REDIS_REPLY_ERROR 6
-#define REDIS_REPLY_DOUBLE 7
-#define REDIS_REPLY_BOOL 8
-#define REDIS_REPLY_VERB 9
-#define REDIS_REPLY_MAP 9
-#define REDIS_REPLY_SET 10
-#define REDIS_REPLY_ATTR 11
-#define REDIS_REPLY_PUSH 12
-#define REDIS_REPLY_BIGNUM 13
 */
 
 #define XSTR(s) str(s)
@@ -216,13 +208,6 @@ done:
         REDIS_REPLY_CASE(NIL);\
         REDIS_REPLY_CASE(STATUS);\
         REDIS_REPLY_CASE(ERROR);\
-        REDIS_REPLY_CASE(DOUBLE);\
-        REDIS_REPLY_CASE(BOOL);\
-        REDIS_REPLY_CASE(MAP);\
-        REDIS_REPLY_CASE(SET);\
-        REDIS_REPLY_CASE(ATTR);\
-        REDIS_REPLY_CASE(PUSH);\
-        REDIS_REPLY_CASE(BIGNUM);\
         default: break;\
     }\
     _s;\
@@ -302,6 +287,9 @@ static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const
     
     AFB_API_INFO (request->api, "%s: send cmd", __func__);
 
+    if (resstr)
+        *resstr = NULL;
+
     redisReply * rep = redisCommandArgv(currentRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
         afb_req_fail_f(request, "redis-error", "redis command failed");
@@ -311,9 +299,7 @@ static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const
     AFB_API_INFO (request->api, "%s: cmd result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(rep->type), rep->str);
 
     if (rep->type == REDIS_REPLY_ERROR) {
-        if (resstr)
-            asprintf(resstr, "redis_command error %s", rep->str);
-
+        ret = asprintf(resstr, "redis_command error %s", rep->str);
     	goto fail;
     }
 
@@ -322,7 +308,7 @@ static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const
 
     ret = redisReplyToJson(request, rep, replyJ);
     if (ret != 0 || *replyJ == NULL) {
-        asprintf(resstr, "failed to convert reply to json");
+        ret = asprintf(resstr, "failed to convert reply to json");
         goto fail;
     }
 
@@ -592,6 +578,7 @@ static void redis_range (afb_req_t request) {
     json_object * replyJ = NULL;
 
     char ** argv = NULL;
+    int argc = 4; // 1 cmd, 1 key, 2 timestamp
     size_t * argvlen = NULL;
     char * resstr;
 
@@ -608,8 +595,6 @@ static void redis_range (afb_req_t request) {
         afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
         goto fail;
     }
-
-    int argc = 4; // 1 cmd, 1 key, 2 timestamp, 
 
     if (count != 0)
         argc++;
