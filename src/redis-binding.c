@@ -803,7 +803,8 @@ OnErrorExit:
 static int onloadConfig(afb_api_t api, CtlSectionT *section, json_object *actionsJ) {
 
     AFB_API_NOTICE (api, "%s...", __func__);
-    int count, ix;
+    size_t count;
+    int ix;
     json_object * redisJ;
 
     if (json_object_get_type(actionsJ) == json_type_array) {
