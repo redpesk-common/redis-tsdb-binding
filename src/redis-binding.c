@@ -42,7 +42,7 @@ static void ctrlapi_ping (afb_req_t request) {
 
 
 static int redisPutRetention(afb_req_t request, uint32_t retention, int * argc, char ** argv, size_t * argvlen) {
-    int ret = ENOMEM;
+    int ret = -ENOMEM;
 
     argv[*argc] = strdup("RETENTION");
     if (argv[*argc] == NULL)
@@ -61,7 +61,7 @@ nomem:
 }
 
 static int redisPutUncompressed(int * argc, char ** argv, size_t * argvlen) {
-    int ret = ENOMEM;
+    int ret = -ENOMEM;
     argv[*argc] = strdup("UNCOMPRESSED");
     if (argv[*argc] == NULL)
         goto nomem;
@@ -130,7 +130,7 @@ static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, 
     ret = 0;
     goto done;
 nomem:
-    ret = ENOMEM;
+    ret = -ENOMEM;
 fail:
 done:
     return ret;
@@ -178,7 +178,7 @@ static int redisPutAggregation(afb_req_t request, json_object * aggregationJ, in
     ret = 0;
     goto done;
 nomem:
-    ret = ENOMEM;
+    ret = -ENOMEM;
 fail:
 done:
     return ret;
@@ -214,7 +214,7 @@ done:
 })
 
 static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_object ** replyJ ) {
-    int ret = EINVAL;
+    int ret = -EINVAL;
     if (!reply)
         goto fail;
     if (!replyJ)
@@ -231,6 +231,7 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
         json_object * arrayJ = json_object_new_array();
         if (!arrayJ)
             goto nomem;
+
         for (ix = 0; ix < reply->elements; ix++) {
             redisReply * element = reply->element[ix];
             json_object * objectJ = NULL;
@@ -273,26 +274,29 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
     ret = 0;
     goto done;
 nomem:
-    ret = ENOMEM;
+    ret = -ENOMEM;
 fail:
     if (*replyJ)
         free(*replyJ);
+
 done:
     return ret;
 }
 
 
 static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
-    int ret = -1;
+    int ret = -EINVAL;
     
-    AFB_API_INFO (request->api, "%s: send cmd", __func__);
+    AFB_API_INFO (request->api, "%s: send cmd %s", __func__, argv[0]);
 
     if (resstr)
         *resstr = NULL;
 
     redisReply * rep = redisCommandArgv(currentRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
-        afb_req_fail_f(request, "redis-error", "redis command failed");
+        ret = asprintf(resstr, "redis-error: redis command failed");
+        if (ret == -1)
+            ret = -ENOMEM;
     	goto fail;
     }
 
@@ -309,6 +313,8 @@ static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const
     ret = redisReplyToJson(request, rep, replyJ);
     if (ret != 0 || *replyJ == NULL) {
         ret = asprintf(resstr, "failed to convert reply to json");
+        if (ret == -1)
+            ret = -ENOMEM;
         goto fail;
     }
 
@@ -346,6 +352,7 @@ static void redis_create (afb_req_t request) {
     char ** argv = NULL;
     size_t * argvlen = NULL;
     char * resstr = NULL;
+    int ret;
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
@@ -411,16 +418,19 @@ static void redis_create (afb_req_t request) {
     }
 
     if (labelsJ) {
-        int ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
+        ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
         if (ret != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
-            if (ret == ENOMEM)
+            if (ret == -ENOMEM)
                 goto nomem;
             goto fail;
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) != 0) {
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
         afb_req_fail_f(request, "redis-error", "%s", resstr);
         goto fail;
     }
@@ -441,6 +451,115 @@ done:
     return;
 }
 
+
+
+static void redis_alter (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    char * rkey = NULL;
+    int32_t retention = 0;
+    uint32_t uncompressed = false;
+    json_object * labelsJ = NULL;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    int ret;
+
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?o !}",
+        "key", &rkey,
+        "retention", &retention,
+        "labels", &labelsJ
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 2; /* one slot for command name, one for the key */
+
+    if (retention)
+        argc += 2;
+
+    if (uncompressed)
+        argc++;
+
+    if (labelsJ) {
+        argc++;
+        json_object_object_foreach(labelsJ, key, val) {
+            (void) val;
+            (void) key;
+            argc += 2;
+        }
+    }
+
+    argv = calloc(argc, sizeof(char*));
+    if (argv == NULL)
+        goto nomem;
+
+    argvlen = calloc(argc, sizeof(size_t));
+    if (argvlen == NULL)
+        goto nomem;
+
+    argc = 0;
+    argv[argc] = strdup("TS.ALTER");
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    argv[argc] = strdup(rkey);
+    if (argv[argc] == NULL)
+        goto nomem;
+
+    argvlen[argc] = strlen(argv[argc]);
+    argc++;
+
+    if (retention)
+        if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
+            goto nomem;
+        }
+
+    if (labelsJ) {
+        int ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
+        if (ret != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
+            if (ret == -ENOMEM)
+                goto nomem;
+            goto fail;
+        }
+    }
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+fail:
+done:
+
+    if (resstr)
+        free(resstr);
+
+    argvCleanup(argc, argv, argvlen);
+
+    return;
+}
+
+// TODO automatic timestamp with '*'
+
 static void redis_add (afb_req_t request) {
 
     json_object *argsJ = afb_req_json(request);
@@ -458,6 +577,8 @@ static void redis_add (afb_req_t request) {
     size_t * argvlen = NULL;
     char * resstr = NULL;
 
+    int ret;
+
     int err = wrap_json_unpack(argsJ, "{s:s,s?s,s:F,s?i,s?b,s?o !}", 
         "key", &rkey,
         "timestamp", &timestamp,
@@ -471,7 +592,7 @@ static void redis_add (afb_req_t request) {
         goto fail;
     }
 
-    int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestemp, and 1 for value */
+    int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestamp, and 1 for value */
     
     if (retention)
         argc += 2;
@@ -540,13 +661,16 @@ static void redis_add (afb_req_t request) {
         int ret = redisPutLabels(request, labelsJ, &argc, argv, argvlen);
         if (ret != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put labels %s", __func__, json_object_get_string(labelsJ));
-            if (ret == ENOMEM)
+            if (ret == -ENOMEM)
                 goto nomem;
             goto fail;
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) != 0) {
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
         afb_req_fail_f(request, "redis-error", "%s", resstr);
         goto fail;
     }
@@ -567,6 +691,159 @@ done:
     return;
 }
 
+static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -EINVAL;
+
+    char * rkey = NULL;
+    char * timestamp = NULL;
+    double value;
+
+    int err = wrap_json_unpack(v, "{s:s,s?s,s:F !}",
+        "key", &rkey,
+        "timestamp", &timestamp,
+        "value", &value);
+    if (err) {
+        AFB_API_ERROR (request->api, "%s: json error %s", __func__, json_object_get_string(v));
+        goto fail;
+    }
+
+    argv[*argc] = strdup(rkey);
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    argv[*argc] = strdup(timestamp);
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    if (asprintf(&argv[*argc], "%f", value) == -1)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+
+    ret = 0;
+    goto done;
+
+nomem:
+    ret = -ENOMEM;
+
+fail:
+done:
+
+    AFB_API_INFO (request->api, "%s:  ret %d", __func__, ret);
+    return ret;
+}
+
+static int _allocate_argv_argvlen(int argc, char ***argv, size_t ** argvlen) {
+    int ret = -1;
+
+    *argv = calloc(argc, sizeof(char*));
+    if (*argv == NULL) {
+        goto nomem;
+    }
+
+    *argvlen = calloc(argc, sizeof(size_t));
+    if (*argvlen == NULL) {
+        goto nomem;
+    }
+    ret = 0;
+nomem:
+    return ret;
+}
+
+static void redis_madd (afb_req_t request) {
+
+    json_object *argsJ = afb_req_json(request);
+
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    int ret;
+    int argc = 0;
+
+    if (json_object_get_type(argsJ) == json_type_object) {
+        const int nbargs = 4;
+        if (_allocate_argv_argvlen(nbargs, &argv, &argvlen) != 0)
+            goto nomem;
+
+        int ret = _redis_get_ts_value(request, argsJ, &argc, argv, argvlen);
+        if (ret == -EINVAL) {
+            afb_req_fail_f(request, "json error", "parse error: %s", json_object_get_string(argsJ));
+            goto fail;
+        }
+         
+        if (ret == -ENOMEM)
+            goto nomem;
+
+    } else if (json_object_get_type(argsJ) == json_type_array) {
+
+        int nbelems = json_object_array_length(argsJ);
+        const int nbargs = 1 + 3*nbelems;
+
+        if (_allocate_argv_argvlen(nbargs, &argv, &argvlen) != 0)
+            goto nomem;
+
+        for (int ix = 0; ix < nbelems; ix++) {
+            json_object * elem = json_object_array_get_idx(argsJ, ix);
+            int ret = _redis_get_ts_value(request, elem, &argc, argv, argvlen);
+
+            if (ret == -EINVAL) {
+                afb_req_fail_f(request, "json error", "parse error: %s", json_object_get_string(elem));
+                goto fail;
+            }
+                
+            if (ret == -ENOMEM)
+                goto nomem;
+        }
+    } else {
+        afb_req_fail_f(request, "parse-error", "wrong json type in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    argv[0] = strdup("TS.MADD");
+    if (argv[0] == NULL)
+        goto nomem;
+    argvlen[0] = strlen(argv[0]);
+    argc++;
+
+    AFB_API_INFO (request->api, "%s: send cmd, argc %d", __func__, argc);
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+done:
+    if (resstr)
+        free(resstr);
+
+    argvCleanup(argc, argv, argvlen);
+    return;
+}
+
+
+
+
 static void redis_range (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
 
@@ -580,7 +857,8 @@ static void redis_range (afb_req_t request) {
     char ** argv = NULL;
     int argc = 4; // 1 cmd, 1 key, 2 timestamp
     size_t * argvlen = NULL;
-    char * resstr;
+    char * resstr = NULL;
+    int ret;
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
@@ -655,17 +933,19 @@ static void redis_range (afb_req_t request) {
     }
 
     if (aggregationJ) {
-        int ret;
         ret = redisPutAggregation(request, aggregationJ, &argc, argv, argvlen);
         if (ret != 0) {
             AFB_API_ERROR (request->api, "%s: failed to put aggregation %s", __func__, json_object_get_string(aggregationJ));
-            if (ret == ENOMEM)
+            if (ret == -ENOMEM)
                 goto nomem;
             goto fail;
         }
     }
 
-    if (redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr) != 0) {
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
         afb_req_fail_f(request, "redis-error", "%s", resstr);
         goto fail;
     }
@@ -677,7 +957,6 @@ nomem:
     afb_req_fail_f(request, "mem-error", "insufficient memory");
 
 fail:
-done:
 
     if (replyJ)
         free(replyJ);
@@ -685,15 +964,55 @@ done:
     if (resstr)
         free(resstr);
 
+done:
     argvCleanup(argc, argv, argvlen);
     return;
 }
 
-static void redis_alter (afb_req_t request) {
+static void redis_incrby (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
     afb_req_success(request, NULL, NULL);
 }
+
+static void redis_decrby (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+
+static void redis_mrange (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+static void redis_get (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+static void redis_mget (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+static void redis_info (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+static void redis_queryindex (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+    afb_req_success(request, NULL, NULL);
+}
+
+
 
 
 // Every HAL export the same API & Interface Mapping from SndCard to AudioLogic is done through alsaHalSndCardT
@@ -701,9 +1020,17 @@ static afb_verb_t CtrlApiVerbs[] = {
     /* VERB'S NAME         FUNCTION TO CALL         SHORT DESCRIPTION */
     { .verb = "ping",     .callback = ctrlapi_ping     , .info = "ping test for API"},
     { .verb = "create", .callback = redis_create , .info = "create a timed value in TS" },
+    { .verb = "alter", .callback = redis_alter , .info = "Update the retention, labels of an existing key." },
 	{ .verb = "add", .callback = redis_add , .info = "add a timed value in TS" },
-    { .verb = "range", .callback = redis_range , .info = "request a timed value in TS" },
-    { .verb = "alter", .callback = redis_alter , .info = "alters a timed value in TS" },
+    { .verb = "madd", .callback = redis_madd , .info = "append new samples o a list of series" },
+    { .verb = "incrby", .callback = redis_incrby , .info = "Creates a new sample that increments the latest sample's value" },
+    { .verb = "decrby", .callback = redis_decrby , .info = "Creates a new sample that decrements the latest sample's value" },
+    { .verb = "range", .callback = redis_range , .info = "query a range in TS" },
+    { .verb = "mrange", .callback = redis_mrange , .info = "query a timestamp range across multiple time-series by filters" },
+    { .verb = "get", .callback = redis_get , .info = "get the last sample TS" },
+    { .verb = "mget", .callback = redis_mget , .info = "get the last samples matching the specific filter." },
+    { .verb = "info", .callback = redis_info , .info = "returns information and statistics on the time-series." },
+    { .verb = "queryindex", .callback = redis_queryindex , .info = "get all the keys matching the filter list." },
     { .verb = NULL} /* marker for end of the array */
 };
 
