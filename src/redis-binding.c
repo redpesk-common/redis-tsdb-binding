@@ -40,34 +40,122 @@ static void ctrlapi_ping (afb_req_t request) {
     return;
 }
 
+static int _redisPutStr(afb_req_t request, const char * str, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -ENOMEM;
+    argv[*argc] = strdup(str);
+    if (argv[*argc] == NULL)
+        goto nomem;
+
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+    ret = 0;
+
+nomem:
+    return ret;
+
+}
+
+static int _redisPutDouble(afb_req_t request, double value, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -ENOMEM;
+
+    if (asprintf(&argv[*argc], "%f", value) == -1)
+        goto nomem;
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+    ret = 0;
+nomem:
+    return ret;    
+}
+
+
+static int _redisPutUint32(afb_req_t request, uint32_t value, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -ENOMEM;
+
+    if (asprintf(&argv[*argc], "%d", value) == -1)
+        goto nomem;
+    argvlen[*argc] = strlen(argv[*argc]);
+    (*argc)++;
+    ret = 0;
+nomem:
+    return ret;    
+}
+
+static int _allocate_argv_argvlen(int argc, char ***argv, size_t ** argvlen) {
+    int ret = -1;
+
+    *argv = calloc(argc, sizeof(char*));
+    if (*argv == NULL) {
+        goto nomem;
+    }
+
+    *argvlen = calloc(argc, sizeof(size_t));
+    if (*argvlen == NULL) {
+        goto nomem;
+    }
+    ret = 0;
+nomem:
+    return ret;
+}
+
+/* a valid timestamp string can parsed as a UNIX timestamp (to an uint64), or a wildcard to automatic */
+static int _redisCheckTimestamp(const char * timestampS) {
+    int ret = -EINVAL;
+    char * end;
+
+    (void) strtol(timestampS, &end, 10);
+
+    if (end == timestampS && strcmp(timestampS, "*") != 0)
+        goto fail;
+
+    ret = 0;
+fail:
+    return ret;    
+
+}
+
+static int redisPutCmd(afb_req_t request, const char * cmd, int * argc, char ** argv, size_t * argvlen) {
+    return _redisPutStr(request, cmd, argc, argv, argvlen);
+}
+
+static int redisPutKey(afb_req_t request, const char * key, int * argc, char ** argv, size_t * argvlen) {
+    return _redisPutStr(request, key, argc, argv, argvlen);
+}
+
+static int redisPutValue(afb_req_t request, double value, int * argc, char ** argv, size_t * argvlen) {
+    return _redisPutDouble(request, value, argc, argv, argvlen);
+}
+
+static int redisPutTimestamp(afb_req_t request, const char * timestampS, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -EINVAL;
+
+    if (_redisCheckTimestamp(timestampS) != 0)
+        goto fail;
+
+    ret = _redisPutStr(request, timestampS, argc, argv, argvlen);
+fail:
+    return ret;    
+}
+
 
 static int redisPutRetention(afb_req_t request, uint32_t retention, int * argc, char ** argv, size_t * argvlen) {
     int ret = -ENOMEM;
 
-    argv[*argc] = strdup("RETENTION");
-    if (argv[*argc] == NULL)
+    if (_redisPutStr(request, "RETENTION", argc, argv, argvlen) != 0)
         goto nomem;
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-
-    if (asprintf(&argv[*argc], "%d", retention) == -1)
+    
+    if (_redisPutUint32(request, retention, argc, argv, argvlen) != 0)
         goto nomem;
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
 
     ret = 0;
 nomem:
     return ret;
 }
 
-static int redisPutUncompressed(int * argc, char ** argv, size_t * argvlen) {
+static int redisPutUncompressed(afb_req_t request, int * argc, char ** argv, size_t * argvlen) {
     int ret = -ENOMEM;
-    argv[*argc] = strdup("UNCOMPRESSED");
-    if (argv[*argc] == NULL)
-        goto nomem;
 
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
+    if (_redisPutStr(request, "UNCOMPRESSED", argc, argv, argvlen) != 0)
+        goto nomem;
 
     ret = 0;
 nomem:
@@ -81,42 +169,30 @@ static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, 
 
     AFB_API_INFO (request->api, "%s: put labels", __func__);
 
-    argv[*argc] = strdup("LABELS");
-    if (argv[*argc] == NULL)
+    if (_redisPutStr(request, "LABELS", argc, argv, argvlen) != 0)
         goto nomem;
-
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
 
     json_object_object_foreach(labelsJ, key, val) {
         type = json_object_get_type(val);
         switch (type) {
         case json_type_string: 
-            argv[*argc] = strdup(key);
-            if (argv[*argc] == NULL)
-                goto nomem;
-            argvlen[*argc] = strlen(argv[*argc]);
-            (*argc)++;
 
-            argv[*argc] = strdup(json_object_get_string(val));
-            if (argv[*argc] == NULL)
+            if (redisPutKey(request, key, argc, argv, argvlen) != 0)
                 goto nomem;
 
-            argvlen[*argc] = strlen(argv[*argc]);
-            (*argc)++;
+            if (_redisPutStr(request, json_object_get_string(val), argc, argv, argvlen) !=0 )
+                goto nomem;
+
             break;
 
         case json_type_int: {
-            argv[*argc] = strdup(key);
-            if (argv[*argc] == NULL)
-                goto nomem;
-            argvlen[*argc] = strlen(argv[*argc]);
-            (*argc)++;
 
-            if (asprintf(&argv[*argc], "%d", json_object_get_int(val)) == -1)
+            if (redisPutKey(request, key, argc, argv, argvlen) != 0)
                 goto nomem;
-            argvlen[*argc] = strlen(argv[*argc]);
-            (*argc)++;
+
+            if (_redisPutUint32(request, json_object_get_int(val), argc, argv, argvlen) != 0)
+                goto nomem;
+
             break;
         }
         
@@ -155,25 +231,14 @@ static int redisPutAggregation(afb_req_t request, json_object * aggregationJ, in
         goto fail;
     }
 
-    argv[*argc] = strdup("AGGREGATION");
-    if (argv[*argc] == NULL)
+    if (_redisPutStr(request, "AGGREGATION", argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-
-    argv[*argc] = strdup(aggregationType);
-    if (argv[*argc] == NULL)
+    if (_redisPutStr(request, aggregationType, argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-
-    if (asprintf(&argv[*argc], "%d", bucket) == -1)
+    if (_redisPutUint32(request, bucket, argc, argv, argvlen) != 0)
         goto nomem;
-
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
 
     ret = 0;
     goto done;
@@ -183,16 +248,6 @@ fail:
 done:
     return ret;
 }
-
-
-/*
-#define REDIS_REPLY_STRING 1
-#define REDIS_REPLY_ARRAY 2
-#define REDIS_REPLY_INTEGER 3
-#define REDIS_REPLY_NIL 4
-#define REDIS_REPLY_STATUS 5
-#define REDIS_REPLY_ERROR 6
-*/
 
 #define XSTR(s) str(s)
 #define str(s) #s
@@ -384,28 +439,16 @@ static void redis_create (afb_req_t request) {
         }
     }
 
-    argv = calloc(argc, sizeof(char*));
-    if (argv == NULL)
-        goto nomem;
-
-    argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == NULL)
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
         goto nomem;
 
     argc = 0;
-    argv[argc] = strdup("TS.CREATE");
-    if (argv[argc] == NULL)
+
+    if (redisPutCmd(request, "TS.CREATE", &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    argv[argc] = strdup(rkey);
-    if (argv[argc] == NULL)
+    if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
         goto nomem;
-
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
 
     if (retention) 
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
@@ -414,7 +457,8 @@ static void redis_create (afb_req_t request) {
         }
 
     if (uncompressed) {
-        redisPutUncompressed(&argc, argv, argvlen);
+        if (redisPutUncompressed(request, &argc, argv, argvlen) != 0)
+            goto nomem;
     }
 
     if (labelsJ) {
@@ -495,28 +539,16 @@ static void redis_alter (afb_req_t request) {
         }
     }
 
-    argv = calloc(argc, sizeof(char*));
-    if (argv == NULL)
-        goto nomem;
-
-    argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == NULL)
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
         goto nomem;
 
     argc = 0;
-    argv[argc] = strdup("TS.ALTER");
-    if (argv[argc] == NULL)
+
+    if (redisPutCmd(request, "TS.ALTER", &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    argv[argc] = strdup(rkey);
-    if (argv[argc] == NULL)
+    if (redisPutKey(request, rkey, &argc, argv, argvlen) !=0)
         goto nomem;
-
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
 
     if (retention)
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
@@ -558,7 +590,7 @@ done:
     return;
 }
 
-// TODO automatic timestamp with '*'
+
 
 static void redis_add (afb_req_t request) {
 
@@ -570,7 +602,7 @@ static void redis_add (afb_req_t request) {
     uint32_t retention = 0;
     uint32_t uncompressed  = false;
     json_object * labelsJ = NULL;
-    char * timestamp;
+    char * timestampS = NULL;
     double value;
 
     char ** argv = NULL;
@@ -579,14 +611,13 @@ static void redis_add (afb_req_t request) {
 
     int ret;
 
-    int err = wrap_json_unpack(argsJ, "{s:s,s?s,s:F,s?i,s?b,s?o !}", 
+    int err = wrap_json_unpack(argsJ, "{s:s,s:s,s:F,s?i,s?b,s?o !}", 
         "key", &rkey,
-        "timestamp", &timestamp,
+        "timestamp", &timestampS,
         "value", &value,
         "retention", &retention,
         "uncompressed", &uncompressed,
-        "labels", &labelsJ
-        );
+        "labels", &labelsJ );
     if (err) {
         afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
         goto fail;
@@ -609,42 +640,22 @@ static void redis_add (afb_req_t request) {
         }
     }
 
-    argv = calloc(argc, sizeof(char*));
-    if (argv == NULL) {
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0) 
         goto nomem;
-    }
-
-    argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == NULL) {
-        goto nomem;
-    }
 
     argc = 0;
-    argv[argc] = strdup("TS.ADD");
-    if (argv[argc] == NULL)
-        goto nomem;
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
 
-    argv[argc] = strdup(rkey);
-    if (argv[argc] == NULL)
+    if (redisPutCmd(request, "TS.ADD", &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    argv[argc] = strdup(timestamp);
-    if (argv[argc] == NULL)
+    if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    if (asprintf(&argv[argc], "%f", value) == -1)
+    if (redisPutTimestamp(request, timestampS, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
+    if (redisPutValue(request, value, &argc, argv, argvlen) != 0)
+        goto nomem;
 
     if (retention) 
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
@@ -653,7 +664,7 @@ static void redis_add (afb_req_t request) {
         }
 
     if (uncompressed) {
-        if (redisPutUncompressed(&argc, argv, argvlen) != 0)
+        if (redisPutUncompressed(request, &argc, argv, argvlen) != 0)
             goto nomem;
     }
 
@@ -698,7 +709,7 @@ static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, c
     char * timestamp = NULL;
     double value;
 
-    int err = wrap_json_unpack(v, "{s:s,s?s,s:F !}",
+    int err = wrap_json_unpack(v, "{s:s,s:s,s:F !}",
         "key", &rkey,
         "timestamp", &timestamp,
         "value", &value);
@@ -707,25 +718,14 @@ static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, c
         goto fail;
     }
 
-    argv[*argc] = strdup(rkey);
-    if (argv[*argc] == NULL)
+    if (redisPutKey(request, rkey, argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-
-    argv[*argc] = strdup(timestamp);
-    if (argv[*argc] == NULL)
+    if (redisPutTimestamp(request, timestamp, argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
-
-    if (asprintf(&argv[*argc], "%f", value) == -1)
+    if (redisPutValue(request, value, argc, argv, argvlen) != 0)
         goto nomem;
-
-    argvlen[*argc] = strlen(argv[*argc]);
-    (*argc)++;
 
     ret = 0;
     goto done;
@@ -740,22 +740,7 @@ done:
     return ret;
 }
 
-static int _allocate_argv_argvlen(int argc, char ***argv, size_t ** argvlen) {
-    int ret = -1;
 
-    *argv = calloc(argc, sizeof(char*));
-    if (*argv == NULL) {
-        goto nomem;
-    }
-
-    *argvlen = calloc(argc, sizeof(size_t));
-    if (*argvlen == NULL) {
-        goto nomem;
-    }
-    ret = 0;
-nomem:
-    return ret;
-}
 
 static void redis_madd (afb_req_t request) {
 
@@ -769,9 +754,10 @@ static void redis_madd (afb_req_t request) {
 
     int ret;
     int argc = 0;
+    int nbargs = 0;
 
     if (json_object_get_type(argsJ) == json_type_object) {
-        const int nbargs = 4;
+        nbargs = 4;
         if (_allocate_argv_argvlen(nbargs, &argv, &argvlen) != 0)
             goto nomem;
 
@@ -787,7 +773,7 @@ static void redis_madd (afb_req_t request) {
     } else if (json_object_get_type(argsJ) == json_type_array) {
 
         int nbelems = json_object_array_length(argsJ);
-        const int nbargs = 1 + 3*nbelems;
+        nbargs = 1 + 3*nbelems;
 
         if (_allocate_argv_argvlen(nbargs, &argv, &argvlen) != 0)
             goto nomem;
@@ -809,15 +795,11 @@ static void redis_madd (afb_req_t request) {
         goto fail;
     }
 
-    argv[0] = strdup("TS.MADD");
-    if (argv[0] == NULL)
+    argc = 0;
+    if (redisPutCmd(request, "TS.MADD", &argc, argv, argvlen) != 0)
         goto nomem;
-    argvlen[0] = strlen(argv[0]);
-    argc++;
 
-    AFB_API_INFO (request->api, "%s: send cmd, argc %d", __func__, argc);
-
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redis_send_cmd(request, nbargs, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -880,56 +862,30 @@ static void redis_range (afb_req_t request) {
     if (aggregationJ)
         argc++;
 
-    argv = calloc(argc, sizeof(char*));
-    if (argv == NULL) {
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
         goto nomem;
-    }
-
-    argvlen = calloc(argc, sizeof(size_t));
-    if (argvlen == NULL) {
-        goto nomem;
-    }
 
     argc = 0;
-    argv[argc] = strdup("TS.RANGE");
-    if (argv[argc] == NULL)
-        goto nomem;
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
 
-    argv[argc] = strdup(rkey);
-    if (argv[argc] == NULL)
+    if (redisPutTimestamp(request, "TS.RANGE", &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    argv[argc] = strdup(fromtimestamp);
-    if (argv[argc] == NULL)
+    if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
-
-    argv[argc] = strdup(totimestamp);
-    if (argv[argc] == NULL)
+    if (redisPutTimestamp(request, fromtimestamp, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    argvlen[argc] = strlen(argv[argc]);
-    argc++;
+    if (redisPutTimestamp(request, totimestamp, &argc, argv, argvlen) != 0)
+        goto nomem;
 
     if (count != 0) {
-        argv[argc] = strdup("COUNT");
-        if (argv[argc] == NULL)
-            goto nomem;
-        argvlen[argc] = strlen(argv[argc]);
-        argc++;
 
-        if (asprintf(&argv[argc], "%d", count) == -1)
+        if (_redisPutStr(request, "COUNT", &argc, argv, argvlen) != 0)
             goto nomem;
-        argvlen[argc] = strlen(argv[argc]);
-        argc++;
 
+        if (_redisPutUint32(request, count, &argc, argv, argvlen) != 0)
+           goto nomem;
     }
 
     if (aggregationJ) {
@@ -969,17 +925,113 @@ done:
     return;
 }
 
-static void redis_incrby (afb_req_t request) {
-    json_object *argsJ = afb_req_json(request);
-    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+static void _redis_incr_or_decr_by (afb_req_t request, bool incr) {
+ json_object *argsJ = afb_req_json(request);
+
+    char * rkey;
+    uint32_t retention = 0;
+    uint32_t uncompressed  = false;
+
+    char * timestampS = NULL;
+    double value;
+
+    AFB_API_DEBUG (request->api, "%s: %s (%s)", __func__, json_object_get_string(argsJ), incr?"incr":"decr");
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    int ret;
+
+    const char * cmd = incr?"TS.INCRBY":"TS.DECRBY";
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s:F,s?s,s?i,s?b !}", 
+        "key", &rkey,
+        "value", &value,
+        "timestamp", &timestampS,
+        "retention", &retention,
+        "uncompressed", &uncompressed );
+
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 3; /* 1 slot for command name, 1 for the key, and 1 for value */
+    
+    if (timestampS)
+        argc += 2;
+    
+    if (retention)
+        argc += 2;
+
+    if (uncompressed)
+        argc++;
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+
+    argc = 0;
+
+    if (redisPutCmd(request, cmd, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutValue(request, value, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (timestampS)
+        if (redisPutTimestamp(request, timestampS, &argc, argv, argvlen) != 0)
+            goto nomem;
+
+    if (retention) 
+        if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put retention", __func__);
+            goto nomem;
+        }
+
+    if (uncompressed) {
+        if (redisPutUncompressed(request, &argc, argv, argvlen) != 0)
+            goto nomem;
+    }
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
+
     afb_req_success(request, NULL, NULL);
 }
 
 static void redis_decrby (afb_req_t request) {
-    json_object *argsJ = afb_req_json(request);
-    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    _redis_incr_or_decr_by(request, false);
 }
+
+static void redis_incrby (afb_req_t request) {
+    _redis_incr_or_decr_by(request, true);
+}
+
 
 
 static void redis_mrange (afb_req_t request) {
@@ -1160,9 +1212,9 @@ static void initRedis(afb_api_t api, json_object * redisJ) {
 
     AFB_API_NOTICE (api, "%s...", __func__);
 
-	int error = wrap_json_unpack(redisJ, "{ss,si !}"
-            , "hostname", &hostname
-			, "port", &port
+	int error = wrap_json_unpack(redisJ, "{ss,si !}",
+            "hostname", &hostname,
+			"port", &port
             );
 
 	if (error) {
