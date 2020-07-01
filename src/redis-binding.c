@@ -860,14 +860,14 @@ static void redis_range (afb_req_t request) {
         argc++;
 
     if (aggregationJ)
-        argc++;
+        argc+=3;
 
     if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
         goto nomem;
 
     argc = 0;
 
-    if (redisPutTimestamp(request, "TS.RANGE", &argc, argv, argvlen) != 0)
+    if (redisPutCmd(request, "TS.RANGE", &argc, argv, argvlen) != 0)
         goto nomem;
 
     if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
@@ -1032,36 +1032,170 @@ static void redis_incrby (afb_req_t request) {
     _redis_incr_or_decr_by(request, true);
 }
 
+static void redis_create_rule (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    char * skey = NULL;
+    char * dkey = NULL;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    json_object * aggregationJ = NULL;
+    int ret;
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s:s,s:o !}",
+        "sourceKey", &skey,
+        "destKey", &dkey,
+        "aggregation", &aggregationJ );
+
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 6; // cmd, source, dest, +3 for aggregation
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+        
+    argc = 0;
+
+    if (redisPutCmd(request, "TS.CREATERULE", &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, skey, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, dkey, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutAggregation(request, aggregationJ, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
+
+}
+
+
+
+static void redis_delete_rule (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    char * skey = NULL;
+    char * dkey = NULL;
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    int ret;
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s:s !}",
+        "sourceKey", &skey,
+        "destKey", &dkey);
+
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 3; // cmd, source, dest
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+        
+    argc = 0;
+
+    if (redisPutCmd(request, "TS.DELETERULE", &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, skey, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, dkey, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
+
+}
+
+
 
 
 static void redis_mrange (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    afb_req_fail_f(request, NULL, "not implemented");
 }
 
 static void redis_get (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    afb_req_fail_f(request, NULL, "not implemented");
 }
 
 static void redis_mget (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    afb_req_fail_f(request, NULL, "not implemented");
 }
 
 static void redis_info (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    afb_req_fail_f(request, NULL, "not implemented");
 }
 
 static void redis_queryindex (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_success(request, NULL, NULL);
+    afb_req_fail_f(request, NULL, "not implemented");
 }
 
 
@@ -1077,6 +1211,8 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "madd", .callback = redis_madd , .info = "append new samples o a list of series" },
     { .verb = "incrby", .callback = redis_incrby , .info = "Creates a new sample that increments the latest sample's value" },
     { .verb = "decrby", .callback = redis_decrby , .info = "Creates a new sample that decrements the latest sample's value" },
+    { .verb = "create_rule", .callback = redis_create_rule , .info = "Create a compaction rule" },
+    { .verb = "delete_rule", .callback = redis_delete_rule , .info = "Delete a compaction rule" },
     { .verb = "range", .callback = redis_range , .info = "query a range in TS" },
     { .verb = "mrange", .callback = redis_mrange , .info = "query a timestamp range across multiple time-series by filters" },
     { .verb = "get", .callback = redis_get , .info = "get the last sample TS" },

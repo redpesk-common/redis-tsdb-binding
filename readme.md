@@ -41,4 +41,11 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis decrby '{ "key":"temper
 
 afb-client-demo -H ws://localhost:1234/api?token=1 redis decrby '{ "key":"temperature", "value":2.2, "timestamp":"*", "uncompressed":true }'
 
+* create/deleterule
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis create '{ "key":"temp1" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis create_rule '{ "sourceKey":"temperature", "destKey":"temp1", "aggregation": {"type": "avg", "bucket":500} }'
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis delete_rule '{ "sourceKey":"temperature", "destKey":"temp1" }
+
 
