@@ -1,16 +1,15 @@
 * redis binding
 
-* cmd create test
+* create
 afb-client-demo -H ws://localhost:1234/api?token=1 redis create '{ "key":"temperature", "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" } }'
 
-* cmd add test
-
+* add
 afb-client-demo -H ws://localhost:1234/api?token=1 redis add '{ "key":"temperature", "timestamp":"1548149191", "value":42 , "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" } }'
 
 afb-client-demo -H ws://localhost:1234/api?token=1 redis add '{ "key":"temperature", "timestamp":"*", "value":42 , "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" } }'
 
 
-* cmd range test
+* range
 afb-client-demo -H ws://localhost:1234/api?token=1 redis range '{ "key":"temperature", "fromts":"1548149191", "tots":"1548149200" }'
 
 * alter
@@ -47,5 +46,10 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis create '{ "key":"temp1"
 afb-client-demo -H ws://localhost:1234/api?token=1 redis create_rule '{ "sourceKey":"temperature", "destKey":"temp1", "aggregation": {"type": "avg", "bucket":500} }'
 
 afb-client-demo -H ws://localhost:1234/api?token=1 redis delete_rule '{ "sourceKey":"temperature", "destKey":"temp1" }
+
+* mrange/mrevrange
+afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"1548149191", "tots":"1548149200" , "filter": [ "sens=3" ] }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"-", "tots":"+" , "filter": [ "sens=3" ] }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"1548149191", "tots":"1548149200", "withlabels":true, "filter": [ "sens=3" ] }'
 
 

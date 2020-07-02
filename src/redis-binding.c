@@ -12,6 +12,8 @@
 #include <stdbool.h>
 #include <errno.h>
 
+#define DEBUG
+
 // default api to print log when apihandle not available
 afb_api_t AFB_default;
 
@@ -54,6 +56,19 @@ nomem:
     return ret;
 
 }
+
+#ifdef DEBUG
+static void _redisDisplayCmd(afb_req_t request, int argc, const char ** argv) {
+    char str[256];
+    str[0] = '\0';
+    for (int ix=0; ix < argc; ix++) {
+        strncat(str, argv[ix], 256-strlen(str)-1);
+        strncat(str, " ", 256-strlen(str)-1);
+    }
+    AFB_API_INFO (request->api, "%s", str);
+
+}
+#endif /* DEBUG */
 
 static int _redisPutDouble(afb_req_t request, double value, int * argc, char ** argv, size_t * argvlen) {
     int ret = -ENOMEM;
@@ -104,7 +119,10 @@ static int _redisCheckTimestamp(const char * timestampS) {
 
     (void) strtol(timestampS, &end, 10);
 
-    if (end == timestampS && strcmp(timestampS, "*") != 0)
+    if (end == timestampS && 
+        strcmp(timestampS, "*") != 0 &&
+        strcmp(timestampS, "-") != 0 &&
+        strcmp(timestampS, "+") != 0 )
         goto fail;
 
     ret = 0;
@@ -128,8 +146,10 @@ static int redisPutValue(afb_req_t request, double value, int * argc, char ** ar
 static int redisPutTimestamp(afb_req_t request, const char * timestampS, int * argc, char ** argv, size_t * argvlen) {
     int ret = -EINVAL;
 
-    if (_redisCheckTimestamp(timestampS) != 0)
+    if (_redisCheckTimestamp(timestampS) != 0) {
+        afb_req_fail(request, "timestamp error", "wrong timestamp format");
         goto fail;
+    }
 
     ret = _redisPutStr(request, timestampS, argc, argv, argvlen);
 fail:
@@ -215,7 +235,7 @@ done:
 
 
 static int redisPutAggregation(afb_req_t request, json_object * aggregationJ, int * argc, char ** argv, size_t * argvlen) {
-    int ret = EINVAL;
+    int ret = -EINVAL;
     char * aggregationType = NULL;
     uint32_t bucket = 0;
 
@@ -248,6 +268,33 @@ fail:
 done:
     return ret;
 }
+
+
+static int redisPutFilter(afb_req_t request, json_object * filterJ, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -EINVAL;
+    int ix;
+    if (!filterJ)
+        goto fail;
+
+    if (_redisPutStr(request, "FILTER", argc, argv, argvlen) != 0)
+        goto nomem;
+
+    for (ix = 0; ix< json_object_array_length(filterJ); ix++) {
+        struct json_object * oneRuleJ = json_object_array_get_idx(filterJ, ix);
+        if (_redisPutStr(request, json_object_get_string(oneRuleJ), argc, argv, argvlen) != 0)
+            goto nomem;
+    }
+
+    ret = 0;
+    goto done;
+nomem:
+    ret = -ENOMEM;    
+fail:
+done:
+    return ret;
+
+}
+
 
 #define XSTR(s) str(s)
 #define str(s) #s
@@ -342,7 +389,9 @@ done:
 static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -EINVAL;
     
-    AFB_API_INFO (request->api, "%s: send cmd %s", __func__, argv[0]);
+#ifdef DEBUG
+    _redisDisplayCmd(request, argc, argv);
+#endif /* DEBUG */
 
     if (resstr)
         *resstr = NULL;
@@ -590,8 +639,6 @@ done:
     return;
 }
 
-
-
 static void redis_add (afb_req_t request) {
 
     json_object *argsJ = afb_req_json(request);
@@ -651,8 +698,12 @@ static void redis_add (afb_req_t request) {
     if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    if (redisPutTimestamp(request, timestampS, &argc, argv, argvlen) != 0)
-        goto nomem;
+    ret = redisPutTimestamp(request, timestampS, &argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
 
     if (redisPutValue(request, value, &argc, argv, argvlen) != 0)
         goto nomem;
@@ -706,12 +757,12 @@ static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, c
     int ret = -EINVAL;
 
     char * rkey = NULL;
-    char * timestamp = NULL;
+    char * timestampS = NULL;
     double value;
 
     int err = wrap_json_unpack(v, "{s:s,s:s,s:F !}",
         "key", &rkey,
-        "timestamp", &timestamp,
+        "timestamp", &timestampS,
         "value", &value);
     if (err) {
         AFB_API_ERROR (request->api, "%s: json error %s", __func__, json_object_get_string(v));
@@ -721,8 +772,12 @@ static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, c
     if (redisPutKey(request, rkey, argc, argv, argvlen) != 0)
         goto nomem;
 
-    if (redisPutTimestamp(request, timestamp, argc, argv, argvlen) != 0)
-        goto nomem;
+    ret = redisPutTimestamp(request, timestampS, argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
 
     if (redisPutValue(request, value, argc, argv, argvlen) != 0)
         goto nomem;
@@ -830,8 +885,8 @@ static void redis_range (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
 
     char * rkey;
-    char * fromtimestamp;
-    char * totimestamp;
+    char * fromtimestampS;
+    char * totimestampS;
     uint32_t count = 0;
     json_object * aggregationJ = NULL;
     json_object * replyJ = NULL;
@@ -846,8 +901,8 @@ static void redis_range (afb_req_t request) {
 
     int err = wrap_json_unpack(argsJ, "{s:s,s:s,s:s,s?i,s?o !}", 
         "key", &rkey,
-        "fromts", &fromtimestamp,
-        "tots", &totimestamp,
+        "fromts", &fromtimestampS,
+        "tots", &totimestampS,
         "count", &count,
         "aggregation", &aggregationJ
         );
@@ -873,14 +928,20 @@ static void redis_range (afb_req_t request) {
     if (redisPutKey(request, rkey, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    if (redisPutTimestamp(request, fromtimestamp, &argc, argv, argvlen) != 0)
-        goto nomem;
-
-    if (redisPutTimestamp(request, totimestamp, &argc, argv, argvlen) != 0)
-        goto nomem;
+    ret = redisPutTimestamp(request, fromtimestampS, &argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
+    ret = redisPutTimestamp(request, totimestampS, &argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
 
     if (count != 0) {
-
         if (_redisPutStr(request, "COUNT", &argc, argv, argvlen) != 0)
             goto nomem;
 
@@ -983,9 +1044,15 @@ static void _redis_incr_or_decr_by (afb_req_t request, bool incr) {
     if (redisPutValue(request, value, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    if (timestampS)
-        if (redisPutTimestamp(request, timestampS, &argc, argv, argvlen) != 0)
-            goto nomem;
+    if (timestampS) {
+        ret = redisPutTimestamp(request, timestampS, &argc, argv, argvlen);
+        if (ret != 0) {
+            if (ret == -EINVAL)
+                goto fail;
+            goto nomem;                
+        }
+
+    }
 
     if (retention) 
         if (redisPutRetention(request, retention, &argc, argv, argvlen) != 0) {
@@ -1100,8 +1167,6 @@ done:
 
 }
 
-
-
 static void redis_delete_rule (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
@@ -1166,13 +1231,140 @@ done:
 }
 
 
+static void _redis_mrange (afb_req_t request, bool forward) {
 
+    char * fromtimestampS;
+    char * totimestampS;
+    uint32_t count = 0;
+    json_object * aggregationJ = NULL;
+    json_object * filterJ = NULL;
+    json_object * replyJ = NULL;
 
-static void redis_mrange (afb_req_t request) {
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+    int ret;
+    bool withlabels = false;
+
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_fail_f(request, NULL, "not implemented");
+
+    const char * cmd = forward?"TS.MRANGE":"TS.MREVRANGE";
+
+    int err = wrap_json_unpack(argsJ, "{s:s,s:s,s?i,s?o,s?b,s:o !}", 
+        "fromts", &fromtimestampS,
+        "tots", &totimestampS,
+        "count", &count,
+        "aggregation", &aggregationJ,
+        "withlabels", &withlabels,
+        "filter", &filterJ
+        );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 3; // cmd, fromts, tots
+
+    if (count != 0)
+        argc++;
+
+    if (aggregationJ)
+        argc+=3;
+
+    if (withlabels)
+        argc++;
+
+    if (filterJ) {
+        argc++;
+        argc += json_object_array_length(filterJ);
+    }
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+
+    argc = 0;
+
+    if (redisPutCmd(request, cmd, &argc, argv, argvlen ) != 0)
+        goto nomem;
+
+    ret = redisPutTimestamp(request, fromtimestampS, &argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
+
+    ret = redisPutTimestamp(request, totimestampS, &argc, argv, argvlen);
+    if (ret != 0) {
+        if (ret == -EINVAL)
+            goto fail;
+        goto nomem;            
+    }
+
+    if (count != 0) {
+
+        if (_redisPutStr(request, "COUNT", &argc, argv, argvlen) != 0)
+            goto nomem;
+
+        if (_redisPutUint32(request, count, &argc, argv, argvlen) != 0)
+           goto nomem;
+    }
+
+    if (aggregationJ) {
+        ret = redisPutAggregation(request, aggregationJ, &argc, argv, argvlen);
+        if (ret != 0) {
+            AFB_API_ERROR (request->api, "%s: failed to put aggregation %s", __func__, json_object_get_string(aggregationJ));
+            if (ret == -ENOMEM)
+                goto nomem;
+            goto fail;
+        }
+    }
+
+    if (withlabels)
+        if (_redisPutStr(request, "WITHLABELS", &argc, argv, argvlen) != 0)
+            goto fail;
+
+    if (filterJ)
+        if (redisPutFilter(request, filterJ, &argc, argv, argvlen) != 0)
+            goto fail;
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, replyJ, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (replyJ)
+        free(replyJ);
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
+
 }
+
+static void redis_mrange (afb_req_t request) {
+    _redis_mrange(request, true);
+}
+
+static void redis_mrevrange (afb_req_t request) {
+    _redis_mrange(request, false);
+}
+
 
 static void redis_get (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
@@ -1214,7 +1406,8 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "create_rule", .callback = redis_create_rule , .info = "Create a compaction rule" },
     { .verb = "delete_rule", .callback = redis_delete_rule , .info = "Delete a compaction rule" },
     { .verb = "range", .callback = redis_range , .info = "query a range in TS" },
-    { .verb = "mrange", .callback = redis_mrange , .info = "query a timestamp range across multiple time-series by filters" },
+    { .verb = "mrange", .callback = redis_mrange , .info = "query a timestamp range across multiple time-series by filters (forward)" },
+    { .verb = "mrevrange", .callback = redis_mrevrange , .info = "query a timestamp range across multiple time-series by filters (reverse)" },
     { .verb = "get", .callback = redis_get , .info = "get the last sample TS" },
     { .verb = "mget", .callback = redis_mget , .info = "get the last samples matching the specific filter." },
     { .verb = "info", .callback = redis_info , .info = "returns information and statistics on the time-series." },
@@ -1237,8 +1430,6 @@ static int CtrlLoadStaticVerbs (afb_api_t apiHandle, afb_verb_t *verbs) {
 
     return errcount;
 };
-
-
 
 static int CtrlLoadOneApi (void *cbdata, afb_api_t apiHandle) {
     CtlConfigT *ctrlConfig = (CtlConfigT*) cbdata;
