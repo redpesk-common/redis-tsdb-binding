@@ -50,6 +50,7 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis delete_rule '{ "sourceK
 * mrange/mrevrange
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"1548149191", "tots":"1548149200" , "filter": [ "sens=3" ] }'
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"-", "tots":"+" , "filter": [ "sens=3" ] }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"-", "tots":"+" , "filter": [ "sens=3" ], "count":3 }'
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"1548149191", "tots":"1548149200", "withlabels":true, "filter": [ "sens=3" ] }'
 
 

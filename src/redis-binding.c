@@ -324,7 +324,7 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
 
     *replyJ = NULL;
 
-    AFB_API_INFO (request->api, "%s: convert type %s", __func__, REDIS_REPLY_TYPE_STR(reply->type));
+    AFB_API_DEBUG (request->api, "%s: convert type %s", __func__, REDIS_REPLY_TYPE_STR(reply->type));
 
     switch (reply->type)
     {
@@ -349,7 +349,7 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
     }
 
     case REDIS_REPLY_INTEGER: {
-        AFB_API_INFO (request->api, "%s: got int %lld", __func__, reply->integer);
+        AFB_API_DEBUG (request->api, "%s: got int %lld", __func__, reply->integer);
         json_object * intJ = json_object_new_int64(reply->integer);
         if (!intJ)
             goto nomem;
@@ -358,8 +358,9 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
         break;
     }
 
+    case REDIS_REPLY_STATUS:
     case REDIS_REPLY_STRING: {
-        AFB_API_INFO (request->api, "%s: got string %s", __func__, reply->str);
+        AFB_API_DEBUG (request->api, "%s: got string %s, int %d", __func__, reply->str, reply->integer);
         json_object * strJ = json_object_new_string(reply->str);
         if (!strJ)
             goto nomem;
@@ -368,7 +369,7 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
     }
 
     default:
-        AFB_API_INFO (request->api, "%s: Unhandled result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(reply->type), reply->str);
+        AFB_API_ERROR (request->api, "%s: Unhandled result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(reply->type), reply->str);
         goto fail;
         break;
     }
