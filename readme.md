@@ -53,4 +53,8 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"-",
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"-", "tots":"+" , "filter": [ "sens=3" ], "count":3 }'
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"1548149191", "tots":"1548149200", "withlabels":true, "filter": [ "sens=3" ] }'
 
+* get/mget
+afb-client-demo -H ws://localhost:1234/api?token=1 redis get '{ "key":"temp1" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis mget '{ "filter": [ "sens=3" ] }'
+
 
