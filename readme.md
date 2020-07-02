@@ -57,4 +57,7 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis mrange '{ "fromts":"154
 afb-client-demo -H ws://localhost:1234/api?token=1 redis get '{ "key":"temp1" }'
 afb-client-demo -H ws://localhost:1234/api?token=1 redis mget '{ "filter": [ "sens=3" ] }'
 
+* info/query index
+afb-client-demo -H ws://localhost:1234/api?token=1 redis info '{ "key":"temperature" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis queryindex '{ "filter": [ "sens"=3 ] }'
 

@@ -270,14 +270,15 @@ done:
 }
 
 
-static int redisPutFilter(afb_req_t request, json_object * filterJ, int * argc, char ** argv, size_t * argvlen) {
+static int redisPutFilter(afb_req_t request, json_object * filterJ, bool with_keyword, int * argc, char ** argv, size_t * argvlen) {
     int ret = -EINVAL;
     int ix;
     if (!filterJ)
         goto fail;
 
-    if (_redisPutStr(request, "FILTER", argc, argv, argvlen) != 0)
-        goto nomem;
+    if (with_keyword)
+        if (_redisPutStr(request, "FILTER", argc, argv, argvlen) != 0)
+            goto nomem;
 
     for (ix = 0; ix< json_object_array_length(filterJ); ix++) {
         struct json_object * oneRuleJ = json_object_array_get_idx(filterJ, ix);
@@ -367,6 +368,15 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
         *replyJ = strJ;
         break;
     }
+
+    case REDIS_REPLY_NIL: {
+        json_object * strJ = json_object_new_string("NIL");
+        if (!strJ)
+            goto nomem;
+        *replyJ = strJ;
+        break;
+    }
+
 
     default:
         AFB_API_ERROR (request->api, "%s: Unhandled result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(reply->type), reply->str);
@@ -1327,7 +1337,7 @@ static void _redis_mrange (afb_req_t request, bool forward) {
             goto fail;
 
     if (filterJ)
-        if (redisPutFilter(request, filterJ, &argc, argv, argvlen) != 0)
+        if (redisPutFilter(request, filterJ, true, &argc, argv, argvlen) != 0)
             goto fail;
 
     ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
@@ -1452,7 +1462,7 @@ static void redis_mget (afb_req_t request) {
         goto fail;
     }
 
-    int argc = 2; // cmd
+    int argc = 1; // cmd
     
     if (withlabels)
         argc++;
@@ -1475,7 +1485,7 @@ static void redis_mget (afb_req_t request) {
         goto nomem;
 
     if (filterJ)
-        if (redisPutFilter(request, filterJ, &argc, argv, argvlen) != 0)
+        if (redisPutFilter(request, filterJ, true, &argc, argv, argvlen) != 0)
             goto nomem;
 
     ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
@@ -1509,13 +1519,124 @@ done:
 static void redis_info (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_fail_f(request, NULL, "not implemented");
+
+    json_object * replyJ = NULL;
+    char * keyS = NULL;
+
+    char * resstr = NULL;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    int ret;
+
+    int err = wrap_json_unpack(argsJ, "{s:s !}", 
+        "key", &keyS );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 2; // cmd + key
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+
+    argc = 0;
+
+    if (redisPutCmd(request, "TS.INFO", &argc, argv, argvlen ) != 0)
+        goto nomem;
+
+    if (redisPutKey(request, keyS, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, replyJ, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (replyJ)
+        free(replyJ);
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
 }
 
 static void redis_queryindex (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-    afb_req_fail_f(request, NULL, "not implemented");
+    
+    json_object * replyJ = NULL;
+    json_object * filterJ = NULL;
+
+    char * resstr = NULL;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    int ret;
+
+    int err = wrap_json_unpack(argsJ, "{s:o !}", 
+        "filter", &filterJ );
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    int argc = 1; // cmd
+
+    if (filterJ) {
+        argc++;
+        argc += json_object_array_length(filterJ);
+    }
+
+    if (_allocate_argv_argvlen(argc, &argv, &argvlen) != 0)
+        goto nomem;
+
+    argc = 0;
+
+    if (redisPutCmd(request, "TS.QUERYINDEX", &argc, argv, argvlen ) != 0)
+        goto nomem;
+
+    if (redisPutFilter(request, filterJ, false, &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, replyJ, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+
+fail:
+
+    if (replyJ)
+        free(replyJ);
+
+    if (resstr)
+        free(resstr);
+
+done:
+    argvCleanup(argc, argv, argvlen);
+    return;
 }
 
 
