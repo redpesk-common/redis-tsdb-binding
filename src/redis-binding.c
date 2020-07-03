@@ -12,7 +12,6 @@
 #include <stdbool.h>
 #include <errno.h>
 
-#define DEBUG
 
 // default api to print log when apihandle not available
 afb_api_t AFB_default;
