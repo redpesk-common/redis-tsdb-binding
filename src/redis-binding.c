@@ -325,10 +325,7 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
 
     *replyJ = NULL;
 
-    AFB_API_DEBUG (request->api, "%s: convert type %s", __func__, REDIS_REPLY_TYPE_STR(reply->type));
-
-    switch (reply->type)
-    {
+    switch (reply->type)  {
     case REDIS_REPLY_ARRAY: {
         int ix;
         json_object * arrayJ = json_object_new_array();
@@ -344,13 +341,12 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
             if (objectJ != 0)
                 json_object_array_add(arrayJ, objectJ);
         }
-        //json_object_object_add(*replyJ, "v", arrayJ);
+
         *replyJ = arrayJ;
         break;
     }
 
     case REDIS_REPLY_INTEGER: {
-        AFB_API_DEBUG (request->api, "%s: got int %lld", __func__, reply->integer);
         json_object * intJ = json_object_new_int64(reply->integer);
         if (!intJ)
             goto nomem;
@@ -361,7 +357,6 @@ static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_obj
 
     case REDIS_REPLY_STATUS:
     case REDIS_REPLY_STRING: {
-        AFB_API_DEBUG (request->api, "%s: got string %s, integer %lld", __func__, reply->str, reply->integer);
         json_object * strJ = json_object_new_string(reply->str);
         if (!strJ)
             goto nomem;
@@ -397,7 +392,7 @@ done:
 }
 
 
-static int redis_send_cmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
+static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -EINVAL;
     
 #ifdef DEBUG
@@ -531,7 +526,7 @@ static void redis_create (afb_req_t request) {
         }
     }
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -626,7 +621,7 @@ static void redis_alter (afb_req_t request) {
         }
     }
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -740,7 +735,7 @@ static void redis_add (afb_req_t request) {
         }
     }
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -865,7 +860,7 @@ static void redis_madd (afb_req_t request) {
     if (redisPutCmd(request, "TS.MADD", &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, nbargs, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, nbargs, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -970,7 +965,7 @@ static void redis_range (afb_req_t request) {
         }
     }
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1076,7 +1071,7 @@ static void _redis_incr_or_decr_by (afb_req_t request, bool incr) {
             goto nomem;
     }
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1153,7 +1148,7 @@ static void redis_create_rule (afb_req_t request) {
     if (redisPutAggregation(request, aggregationJ, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1216,7 +1211,7 @@ static void redis_delete_rule (afb_req_t request) {
     if (redisPutKey(request, dkey, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1340,7 +1335,7 @@ static void _redis_mrange (afb_req_t request, bool forward) {
         if (redisPutFilter(request, filterJ, true, &argc, argv, argvlen) != 0)
             goto fail;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1412,7 +1407,7 @@ static void redis_get (afb_req_t request) {
     if (redisPutKey(request, keyS, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1488,7 +1483,7 @@ static void redis_mget (afb_req_t request) {
         if (redisPutFilter(request, filterJ, true, &argc, argv, argvlen) != 0)
             goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1548,7 +1543,7 @@ static void redis_info (afb_req_t request) {
     if (redisPutKey(request, keyS, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
@@ -1612,7 +1607,7 @@ static void redis_queryindex (afb_req_t request) {
     if (redisPutFilter(request, filterJ, false, &argc, argv, argvlen) != 0)
         goto nomem;
 
-    ret = redis_send_cmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr);
     if (ret != 0) {
         if (ret == -ENOMEM)
             goto nomem;
