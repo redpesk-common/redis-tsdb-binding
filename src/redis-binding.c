@@ -183,7 +183,7 @@ nomem:
 
 
 static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, char ** argv, size_t * argvlen) {
-    int ret = EINVAL;
+    int ret = -EINVAL;
     enum json_type type;
 
     AFB_API_INFO (request->api, "%s: put labels", __func__);
