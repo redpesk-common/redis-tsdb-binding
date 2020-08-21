@@ -416,6 +416,9 @@ static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const s
     	goto fail;
     }
 
+    if (rep->type == REDIS_REPLY_INTEGER)
+        AFB_API_INFO (request->api, "%s: ret %lld", __func__, rep->integer);
+
     if (!replyJ)
         goto done;
 
@@ -549,6 +552,96 @@ done:
     return;
 }
 
+
+static void redis_del(afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * resstr = NULL;
+
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    int ret;
+    int argc = 0;
+    int nbargs = 1;
+    json_object * keyJ;
+
+    int err = wrap_json_unpack(argsJ, "{so !}",
+        "key", &keyJ );
+
+    if (err) {
+        afb_req_fail_f(request, "parse-error", "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    if (json_object_get_type(keyJ) == json_type_string) {
+        nbargs++;
+    } else if (json_object_get_type(keyJ) == json_type_array) {
+        nbargs+= json_object_array_length(keyJ);
+    } else {
+        afb_req_fail_f(request, "parse-error", "wrong json type in '%s'", json_object_get_string(keyJ));
+        goto fail;
+    }
+
+    if (_allocate_argv_argvlen(nbargs, &argv, &argvlen) != 0)
+        goto nomem;
+
+    if (redisPutCmd(request, "DEL", &argc, argv, argvlen) != 0)
+        goto nomem;
+
+    if (json_object_get_type(keyJ) == json_type_string) {
+        const char * key = json_object_get_string(keyJ);
+
+        ret = redisPutKey(request, key, &argc, argv, argvlen);
+        if (ret == -EINVAL) {
+            afb_req_fail_f(request, "json error", "parse error: %s", json_object_get_string(argsJ));
+            goto fail;
+        }
+
+    if (ret == -ENOMEM)
+            goto nomem;
+
+    } else if (json_object_get_type(keyJ) == json_type_array) {
+        int nbelems = json_object_array_length(keyJ);
+
+        for (int ix = 0; ix < nbelems; ix++) {
+            json_object * elem = json_object_array_get_idx(keyJ, ix);
+            const char * key = json_object_get_string(elem);
+            
+            ret = redisPutKey(request, key, &argc, argv, argvlen);
+            if (ret == -EINVAL) {
+                afb_req_fail_f(request, "json error", "parse error: %s", json_object_get_string(elem));
+                goto fail;
+            }
+                
+            if (ret == -ENOMEM)
+                goto nomem;
+        }
+    } 
+
+    ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr);
+    if (ret != 0) {
+        if (ret == -ENOMEM)
+            goto nomem;
+        afb_req_fail_f(request, "redis-error", "%s", resstr);
+        goto fail;
+    }
+
+    afb_req_success(request, NULL, NULL);
+    goto done;
+
+nomem:
+    afb_req_fail_f(request, "mem-error", "insufficient memory");
+fail:
+done:
+
+    if (resstr)
+        free(resstr);
+
+    argvCleanup(argc, argv, argvlen);
+
+}
 
 
 static void redis_alter (afb_req_t request) {
@@ -1641,6 +1734,7 @@ static afb_verb_t CtrlApiVerbs[] = {
     /* VERB'S NAME         FUNCTION TO CALL         SHORT DESCRIPTION */
     { .verb = "ping",     .callback = ctrlapi_ping     , .info = "ping test for API"},
     { .verb = "create", .callback = redis_create , .info = "create a timed value in TS" },
+    { .verb = "del", .callback = redis_del , .info = "Remove the specified keys" },
     { .verb = "alter", .callback = redis_alter , .info = "Update the retention, labels of an existing key." },
 	{ .verb = "add", .callback = redis_add , .info = "add a timed value in TS" },
     { .verb = "madd", .callback = redis_madd , .info = "append new samples o a list of series" },
