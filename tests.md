@@ -1,5 +1,7 @@
 # Requests Examples & Tests
 
+# Low-level verbs (direct RedisTimeSeries mapping)
+
 * create
 ```
 afb-client-demo -H ws://localhost:1234/api?token=1 redis create '{ "key":"temperature", "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" } }'
@@ -72,4 +74,26 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis mget '{ "filter": [ "se
 afb-client-demo -H ws://localhost:1234/api?token=1 redis info '{ "key":"temperature" }'
 afb-client-demo -H ws://localhost:1234/api?token=1 redis queryindex '{ "filter": [ "sens"=3 ] }'
 ```
+
+# High Level verbs (from json to redis and vice-versa )
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jinsert '{ "class":"sensor1", "data": { "temperature": 25.2, "table": [ 1, 2, 3 ] } }'
+
+# with blobs
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jinsert '{ "class":"sensor2", "data": [ "cool" , "groovy" ] }'
+
+# with objects in array
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jinsert '{ "class":"sensor3", "data": { "table": [ {"s": 12} , {"v": 21} ] } }'
+
+# Queries
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor1" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor2" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor3" }'
+
+# Deletion
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor1" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor2" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor3" }'
 

@@ -19,8 +19,10 @@
 # Add target to project dependency list
 PROJECT_TARGET_ADD(redis-binding)
 
+file(GLOB SOURCE_FILES "*.c")
+
 # Define project Targets
-ADD_LIBRARY(${TARGET_NAME} MODULE redis-binding.c)
+ADD_LIBRARY(${TARGET_NAME} MODULE ${SOURCE_FILES})
 
 SET_TARGET_PROPERTIES(${TARGET_NAME} PROPERTIES
 PREFIX ""
@@ -34,5 +36,3 @@ TARGET_INCLUDE_DIRECTORIES(${TARGET_NAME}
 )
 # make sure config is copied before starting
 add_dependencies(${TARGET_NAME} redis-config)
-
-

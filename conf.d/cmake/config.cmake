@@ -21,7 +21,7 @@
 set(PROJECT_NAME redis-test-binding)
 set(PROJECT_VERSION 1.0)
 set(PROJECT_PRETTY_NAME "Agl Test Binding of Redis Plugin")
-set(PROJECT_DESCRIPTION "Test Binding of the redis plugin;  Redis Time Series database")
+set(PROJECT_DESCRIPTION "Test Binding of the redis plugin: Redis Time Series database")
 set(PROJECT_URL "git@git.ovh.iot:tbultel/agl-redis-test-binding.git")
 set(PROJECT_ICON "icon.png")
 set(PROJECT_AUTHOR "Thierry Bultel")
