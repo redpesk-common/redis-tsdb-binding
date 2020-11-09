@@ -76,8 +76,7 @@ set (PKG_REQUIRED_LIST
 	uuid
 	liburcu
 	afb-helpers
-	ctl-utilities
-	lua5.3
+	appcontroller
 	hiredis
 )
 
