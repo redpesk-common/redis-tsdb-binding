@@ -1735,6 +1735,8 @@ static void ts_jget (afb_req_t request) {
     char * class = NULL;
     char * resstr = NULL;
     int ret = -EINVAL;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s !}",
         "class", &class );
@@ -1746,10 +1748,6 @@ static void ts_jget (afb_req_t request) {
     /* retrieves keys having this class label */
 
     int argc = 3; /* cmd + FILTER + filter */
-    char ** argv = NULL;
-    size_t * argvlen = NULL;
-#define FILTER_LABEL_MATCH "class="
-
     char * filter = NULL;
 
     if ((ret == asprintf(&filter, "class=%s", class)) != 0)
@@ -1815,6 +1813,8 @@ static void ts_jdel (afb_req_t request) {
     char * class = NULL;
     char * resstr = NULL;
     int ret = -EINVAL;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s !}",
         "class", &class );
@@ -1826,10 +1826,6 @@ static void ts_jdel (afb_req_t request) {
     /* retrieves keys having this class label, by doing a query on the index */
 
     int argc = 2; /* cmd + filter */
-    char ** argv = NULL;
-    size_t * argvlen = NULL;
-#define FILTER_LABEL_MATCH "class="
-
     char * filter = NULL;
 
     if ((ret = asprintf(&filter, "class=%s", class)) == -1)
@@ -1898,8 +1894,6 @@ done:
 
 }
 
-
-// Every HAL export the same API & Interface Mapping from SndCard to AudioLogic is done through alsaHalSndCardT
 static afb_verb_t CtrlApiVerbs[] = {
     /* VERB'S NAME         FUNCTION TO CALL         SHORT DESCRIPTION */
     { .verb = "ping",     .callback = ctrlapi_ping     , .info = "ping test for API"},
