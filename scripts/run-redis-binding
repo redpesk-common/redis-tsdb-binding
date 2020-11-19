@@ -1,0 +1,7 @@
+#!/bin/bash -x
+
+WD="$HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis/build"
+
+afb-daemon --name redis --port=1234 --workdir=$WD \
+--ldpath=/dev/null --binding=package/lib/redis-binding.so \
+--roothttp=package/htdocs --token= --tracereq=common -vvv \
