@@ -1085,10 +1085,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
     return;
@@ -1411,10 +1411,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
     return;
@@ -1475,10 +1475,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
     return;
@@ -1543,10 +1543,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
     return;
@@ -1595,10 +1595,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
     return;
@@ -1651,10 +1651,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
 
-    free(replyJ);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
 
@@ -1719,10 +1719,10 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
     free(resstr);
-    free(replyJ);
     return;
 }
 
@@ -1794,11 +1794,11 @@ fail:
     if (ret == -ENOMEM)
         ret = asprintf(&resstr, INSUFFICIENT_MEMORY);
     afb_req_fail(request, "error", resstr);
+    free(replyJ);
 
 done:
     free(filter);
     free(resstr);
-    free(replyJ);
 
     argvCleanup(argc, argv, argvlen);
 
@@ -1855,7 +1855,7 @@ static void ts_jdel (afb_req_t request) {
     }
 
     argvCleanup(argc, argv, argvlen);
-    argc = 1 + rep->elements;
+    argc = 1 + (uint)rep->elements;
 
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
         goto fail;
