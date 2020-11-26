@@ -11,15 +11,18 @@
 #include <time.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "json2table.h"
+#include "redis-systemd.h"
 
 #define INSUFFICIENT_MEMORY "Insufficient memory"
 
 // default api to print log when apihandle not available
 afb_api_t AFB_default;
 
-static redisContext * currentRedisContext = NULL;
+static redisAsyncContext * asyncRedisContext = NULL;
+static redisContext * syncRedisContext = NULL;
 
 static void initRedis(afb_api_t, json_object *);
 
@@ -385,6 +388,15 @@ done:
     return ret;
 }
 
+static void * __redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) {
+    redisReply * rep = NULL;
+    if (c == NULL)
+        goto fail;
+
+    rep = redisCommandArgv(syncRedisContext, argc, argv, argvlen);
+fail:
+    return rep;
+}
 
 static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -EINVAL;
@@ -396,7 +408,7 @@ static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const s
     if (resstr)
         *resstr = NULL;
 
-    redisReply * rep = redisCommandArgv(currentRedisContext, argc, argv, argvlen);
+    redisReply * rep = __redisCommandArgv(syncRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(resstr, "redis-error: redis command failed");
         if (ret == -1)
@@ -1766,7 +1778,7 @@ static void ts_jget (afb_req_t request) {
     if ((ret = _redisPutStr(request, filter, &argc, argv, argvlen)) != 0)
         goto fail;
 
-    redisReply * rep = redisCommandArgv(currentRedisContext, argc,  (const char **)argv, argvlen);
+    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(&resstr, "redis-error: redis command failed");
         goto fail;
@@ -1841,7 +1853,7 @@ static void ts_jdel (afb_req_t request) {
     if (_redisPutStr(request, filter, &argc, argv, argvlen) != 0)
         goto fail;
 
-    redisReply * rep = redisCommandArgv(currentRedisContext, argc,  (const char **)argv, argvlen);
+    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(&resstr, "redis-error: redis command failed");
         goto fail;
@@ -1871,7 +1883,7 @@ static void ts_jdel (afb_req_t request) {
         goto fail;
     }
 
-    rep = redisCommandArgv(currentRedisContext, argc,  (const char **)argv, argvlen);
+    rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(&resstr, "redis-error: redis command failed");
         goto fail;
@@ -2038,11 +2050,78 @@ static int onloadConfig(afb_api_t api, CtlSectionT *section, json_object *action
 
 }
 
-static void initRedis(afb_api_t api, json_object * redisJ) {
-	char * hostname;
-	uint32_t port;
+static char * hostname;
+static uint32_t port;
 
-    AFB_API_NOTICE (api, "%s...", __func__);
+
+static void connectCallback(const redisAsyncContext *c, int status);
+static void disconnectCallback(const redisAsyncContext *c, int status);
+
+static void connectRedis(afb_api_t api) {
+    redisAsyncContext *c = NULL;
+
+    c = redisAsyncConnect(hostname, port);
+    if (c->err) {
+        AFB_API_ERROR(api, "Connection error: can't allocate async redis context: %s\n", c->errstr);
+        return;
+    }
+
+    sd_event * event = afb_api_get_event_loop(api);
+
+    if (redisSdAttach(api, c, event) != REDIS_OK)
+        return;
+
+    redisAsyncSetConnectCallback(c,connectCallback);
+    redisAsyncSetDisconnectCallback(c,disconnectCallback);
+}
+
+static bool logConnectionRefusedOnce = false;
+
+static void connectCallback(const redisAsyncContext *c, int status) {
+
+    afb_api_t api = c->data;
+
+    if (status != REDIS_OK) {
+        if (!logConnectionRefusedOnce)
+            AFB_API_ERROR(api, "Error: %s\n", c->errstr);
+        logConnectionRefusedOnce = true;
+
+        usleep(200);
+        connectRedis(api);
+        return;
+    }
+
+    asyncRedisContext = (redisAsyncContext*) c;
+
+    /* We use, for now, an additionnal synchronous connection,
+       regarding the significant mandatory changes that would be needed
+       to use full asynchronous requests calls */
+
+    syncRedisContext = redisConnect(hostname, port);
+    if (syncRedisContext == NULL) {
+        AFB_API_ERROR(api, "Failed to get a SYNC connection");
+    } else {
+        AFB_API_NOTICE(api, "Connected...");
+    }
+
+}
+
+static void disconnectCallback(const redisAsyncContext *c, int status) {
+
+    afb_api_t api = c->data;
+    logConnectionRefusedOnce = false;
+
+    if (status != REDIS_OK) {
+        AFB_API_ERROR(api, "Error: %s", c->errstr);
+    }
+
+    AFB_API_NOTICE(api, "Disconnected...");
+    syncRedisContext = NULL;
+    asyncRedisContext = NULL;
+    connectRedis(api);
+}
+
+static void initRedis(afb_api_t api, json_object * redisJ) {
 
 	int error = wrap_json_unpack(redisJ, "{ss,si !}",
             "hostname", &hostname,
@@ -2054,18 +2133,8 @@ static void initRedis(afb_api_t api, json_object * redisJ) {
 		goto fail;
 	}
 
-    AFB_API_NOTICE (api, "%s...to %s/%d", __func__, hostname, port);
-
-    currentRedisContext = redisConnect(hostname, port);
-    if (currentRedisContext == NULL) {
-    	AFB_API_ERROR(api, "Connection error: can't allocate redis context\n");
-    	goto fail;
-    }
-    if (currentRedisContext->err) {
-    	 AFB_API_ERROR(api, "Connection error: %s\n", currentRedisContext->errstr);
-    	 redisFree(currentRedisContext);
-    	 goto fail;
-   }
+    AFB_API_NOTICE (api, "Connect to %s:%d", hostname, port);
+    connectRedis(api);
 
 fail:
 	return;
