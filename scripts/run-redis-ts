@@ -1,8 +1,0 @@
-#!/bin/bash -x
-
-REPO_ROOT="$HOME/Documents/Dev/repos"
-REDIS_SERVER="$REPO_ROOT/community/redis/src/redis-server"
-REDIS_CONFIG="$REPO_ROOT/iotbzh/rp-service-hiredis/scripts/redis.conf"
-
-$REDIS_SERVER $REDIS_CONFIG
-

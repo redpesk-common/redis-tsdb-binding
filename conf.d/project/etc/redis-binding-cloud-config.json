@@ -1,0 +1,17 @@
+{
+    "$schema": "http://iot.bzh/download/public/schema/json/ctl-schema.json",
+    "metadata": {
+        "uid": "Redis Binding",
+        "version": "1.0",
+        "api": "redis",
+        "info": "Redis Client binding"
+    },
+    "onload": [ 
+    	{
+       		"redis": {
+    			"hostname":"127.0.0.1",
+    			"port": 6378
+    		}
+    	}
+    ]
+}

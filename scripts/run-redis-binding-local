@@ -1,0 +1,16 @@
+#!/bin/bash -x
+# Redis local
+
+REPO_ROOT="$HOME/Documents/Dev/repos"
+REDIS_SERVER="$REPO_ROOT/community/redis/src/redis-server"
+REDIS_CONFIG="$REPO_ROOT/iotbzh/rp-service-hiredis/scripts/redis.conf"
+
+WD="$REPO_ROOT/iotbzh/rp-service-hiredis/build"
+
+$REDIS_SERVER $REDIS_CONFIG &
+
+afb-daemon --name redis --port=1234 --workdir=$WD \
+--ldpath=/dev/null --binding=package/lib/redis-binding.so \
+--roothttp=package/htdocs --token= --tracereq=common -vvv \
+--monitor \
+--ws-server=unix:/tmp/redis
