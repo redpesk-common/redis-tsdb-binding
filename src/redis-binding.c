@@ -117,7 +117,8 @@ nomem:
     return ret;
 }
 
-/* a valid timestamp string can parsed as a UNIX timestamp (to an uint64), or a wildcard to automatic */
+/* a valid timestamp string can parsed as a UNIX timestamp (to an uint64), or a wildcard to automatic,
+   or '-' for the oldest, and '+' for the most recent */
 static int _redisCheckTimestamp(const char * timestampS) {
     int ret = -EINVAL;
     char * end;
@@ -1684,10 +1685,12 @@ static void ts_jinsert (afb_req_t request) {
     json_object* dataJ = NULL;
     char * class = NULL;
     char * resstr = NULL;
+    char * timestampS = NULL;
     int ret = -EINVAL;
 
-    int err = wrap_json_unpack(argsJ, "{s:s, s:o !}",
+    int err = wrap_json_unpack(argsJ, "{s:s, s?s, s:o !}",
         "class", &class,
+        "timestamp", &timestampS,
         "data", &dataJ );
     if (err) {
         err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
@@ -1695,6 +1698,9 @@ static void ts_jinsert (afb_req_t request) {
     }
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    if (timestampS == NULL)
+        timestampS = "*";
 
     json2table(class, dataJ, &list);
 
@@ -1715,11 +1721,11 @@ static void ts_jinsert (afb_req_t request) {
 
         if (pair->type == VALUE_TYPE_DOUBLE) {
             /* TODO get timestamp from incoming data when available */
-            if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, "*", class, &resstr)) != 0)
+            if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, timestampS, class, &resstr)) != 0)
                 goto fail;
         } else {
             /* TODO get timestamp from incoming data when available */
-            if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, "*", class, &resstr)) != 0)
+            if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, timestampS, class, &resstr)) != 0)
                 goto fail;
         }
     }
