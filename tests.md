@@ -139,12 +139,15 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_mrange '{ "class":"s
 
 expected output format:
 
-``` bash
+```json
 {
   "response":{
-    "sensor2": [
-        { "ts": 123456789, [ "cool", "groovy" ] },  
-        { "ts": 123413889, [ "bad", "nasty" ] },  
+    "ts": [1606743420408, 1606743426621, 1606743429893],
+    "data": [
+        [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],  
+        [ "sensor2[1]", [ "groovy", "groovy", "groovy" ] ],  
+        [ "sensor2[2]", [ 6, 6, 6 ] ],  
+        [ "sensor2[3]", [ 23.3, 23.6, 23.7 ] ]
     ]
   }
 }

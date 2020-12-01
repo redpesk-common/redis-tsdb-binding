@@ -75,11 +75,11 @@ This is thus the expected output of *ts.mrange*:
 {
   "response":{
     "ts": [1606743420408, 1606743426621, 1606743429893],
-    "data": [ 
+    "data": [
         [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],  
         [ "sensor2[1]", [ "groovy", "groovy", "groovy" ] ],  
         [ "sensor2[2]", [ 6, 6, 6 ] ],  
-        [ "sensor2[3]", [ 25.3, 23.6, 23.7 ] ]
+        [ "sensor2[3]", [ 23.3, 23.6, 23.7 ] ]
     ]
   }
 }
