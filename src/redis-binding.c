@@ -1720,11 +1720,9 @@ static void ts_jinsert (afb_req_t request) {
 #endif
 
         if (pair->type == VALUE_TYPE_DOUBLE) {
-            /* TODO get timestamp from incoming data when available */
             if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, timestampS, class, &resstr)) != 0)
                 goto fail;
         } else {
-            /* TODO get timestamp from incoming data when available */
             if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, timestampS, class, &resstr)) != 0)
                 goto fail;
         }
@@ -1802,7 +1800,12 @@ static void ts_jget (afb_req_t request) {
         goto fail;
     }
 
-    if ((ret = mgetReply2Json( rep, &replyJ )) != 0)
+    // TODO
+    json_object * debugJ;
+    redisReplyToJson(request, rep, &debugJ );
+    fprintf(stderr, "%s: debuhJ %s\n", __func__, json_object_get_string(debugJ));
+
+    if ((ret = mgetReply2Json( rep, class, &replyJ )) != 0)
         goto fail;
 
     afb_req_success(request, replyJ, resstr);
@@ -1822,6 +1825,99 @@ done:
 
     return;
 }
+
+
+static void ts_mrange (afb_req_t request) {
+
+    json_object* argsJ = afb_req_json(request);
+    json_object* replyJ = NULL;
+
+    char * class = NULL;
+    char * resstr = NULL;
+    int ret = -EINVAL;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    char * fromtsS = NULL;
+    char * totsS = NULL;
+
+    int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:s!}",
+        "class", &class,
+        "fromts", &fromtsS,
+        "tots", &totsS );
+    if (err) {
+        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    if (fromtsS == NULL)
+        fromtsS = "-";
+
+    if (totsS == NULL)
+        totsS = "+";
+    
+    int argc = 5; /* cmd + fromts + tots + FILTER + filter */
+    char * filter = NULL;
+
+    if ((ret = asprintf(&filter, "class=%s", class)) == -1)
+        goto fail;
+
+    if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
+        goto fail;
+
+    argc = 0;
+    if ((ret = redisPutCmd(request, "TS.MRANGE", &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisPutTimestamp(request, fromtsS, &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisPutTimestamp(request, totsS, &argc, argv, argvlen)) != 0)
+        goto fail;   
+
+    if ((ret = _redisPutStr(request, "FILTER", &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = _redisPutStr(request, filter, &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
+    if (rep == NULL) {
+        ret = asprintf(&resstr, "redis-error: redis command failed");
+        goto fail;
+    }
+
+
+    AFB_API_INFO (request->api, "%s: cmd result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(rep->type), rep->str);
+
+    if (rep->type == REDIS_REPLY_ERROR) {
+        ret = asprintf(&resstr, "redis_command error %s", rep->str);
+        goto fail;
+    }
+
+    if (rep->type != REDIS_REPLY_ARRAY) {
+        ret = asprintf(&resstr, "%s: unexpected response type", __func__);
+        goto fail;
+    }
+
+    if ((ret = mrangeReply2Json( rep, class, &replyJ )) != 0)
+        goto fail;
+
+    afb_req_success(request, replyJ, resstr);
+    goto done;
+
+fail:
+    if (ret == -ENOMEM)
+        ret = asprintf(&resstr, INSUFFICIENT_MEMORY );
+    afb_req_fail(request, "error", resstr);
+
+done:
+    free(filter);
+    free(resstr);
+    argvCleanup(argc, argv, argvlen);
+
+
+}
+
 
 static void ts_jdel (afb_req_t request) {
 
@@ -1933,7 +2029,8 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "queryindex", .callback = redis_queryindex , .info = "get all the keys matching the filter list." },
 
     { .verb = "ts_jinsert", .callback = ts_jinsert, .info = "insert a json object in the database "},
-    { .verb = "ts_jget", .callback = ts_jget, .info = "gets a flattened json object from the database "},
+    { .verb = "ts_jget", .callback = ts_jget, .info = "gets a flattened json object from the database (latest sample) "},
+    { .verb = "ts_mrange", .callback = ts_mrange, .info = "gets a flattened json object from the database (with time range) "},
     { .verb = "ts_jdel", .callback = ts_jdel, .info = "deletes a flattened json object from the database, giving its class name"},
     { .verb = NULL} /* marker for end of the array */
 };

@@ -21,5 +21,6 @@ typedef struct {
 } JSON_PAIR;
 
 extern int json2table(const char * class, json_object * obj, struct cds_list_head * list);
-extern int mgetReply2Json(const redisReply * rep, json_object ** obj);
+extern int mgetReply2Json(const redisReply * rep, const char * class, json_object ** obj);
+extern int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** obj);
 
