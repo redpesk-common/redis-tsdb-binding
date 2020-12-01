@@ -9,7 +9,7 @@ WD="$REPO_ROOT/iotbzh/rp-service-hiredis/build"
 
 $REDIS_SERVER $REDIS_CONFIG &
 
-afb-daemon --name redis --port=1234 --workdir=$WD \
+afb-daemon --name redis --port=1236 --workdir=$WD \
 --ldpath=/dev/null --binding=package/lib/redis-binding.so \
 --roothttp=package/htdocs --token= --tracereq=common -vvv \
 --monitor \
