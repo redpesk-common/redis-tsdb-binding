@@ -1,4 +1,4 @@
-# rp-service-hiredis : a service to access RedisTimeSeries databases
+# redis-tsdb-binding : a service to access RedisTimeSeries databases
 
 This AGL service uses the hiredis C library to request a running Redis (https://redis.io/)
 server with the RedisTimeSeries (https://oss.redislabs.com/redistimeseries/) plugin.
