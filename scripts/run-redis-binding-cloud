@@ -17,8 +17,8 @@ $REDIS_SERVER $REDIS_CONFIG &
 # Note that --name and prefix in binding itself must align to compose config
 # filename, here redis-binding-cloud for --name=redis-cloud and
 # prefix=redis-binding
-$GDB afb-daemon --name redis-cloud --port=1235 --workdir=$WD \
---ldpath=/dev/null --binding=package/lib/redis-binding.so \
---roothttp=package/htdocs --token= --tracereq=common -vvv \
+$GDB afb-binder --name redis-cloud --port=1235 --workdir=$WD \
+--binding=package/lib/redis-binding.so \
+--roothttp=package/htdocs --tracereq=common -vvv \
 --monitor \
 --ws-server=tcp:localhost:1212/redis
