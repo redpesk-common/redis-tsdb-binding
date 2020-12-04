@@ -14,3 +14,9 @@ afb-binder --name redis --port=1236 --workdir=$WD \
 --roothttp=package/htdocs --tracereq=common -vvv \
 --monitor \
 --ws-server=unix:/tmp/redis
+
+# Fill database with:
+# afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jinsert '{"class":"sensor2", "data": [ "cool" , "groovy", 6 , 23.5 ] }'
+#
+# Request records via:
+# afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_mrange '{"class":"sensor2", "fromts":"-", "tots":"+" }'
