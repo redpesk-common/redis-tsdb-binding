@@ -1,0 +1,40 @@
+#!/bin/bash -x
+
+set -o errexit
+
+if [[ -z "$1" ]]; then
+    echo "error: need to provide an F33 container name!"
+    exit 1
+fi
+container="$1"
+
+#lxc exec $container -- dnf update -y
+#lxc exec $container -- dnf install -y libmicrohttpd-devel hiredis
+
+# Binder
+lxc exec $container -- mkdir -p /usr/share/afb-binder/
+lxc file push /usr/lib64/{libafb.so,libafb.so.4} $container/usr/lib64/
+lxc file push /usr/bin/afb-binder $container/usr/bin/
+lxc file push -r /usr/share/afb-binder/monitoring $container/usr/share/afb-binder
+lxc exec $container -- afb-binder --help
+
+# Redis
+lxc file push $HOME/Documents/Dev/repos/community/redis/src/redis-server $container/root/
+lxc file push $HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis/scripts/redis-cloud-container.conf $container/root/
+
+# Redis TS
+lxc file push $HOME/Documents/Dev/repos/iotbzh/RedisTimeSeries/bin/linux-x64-release/redistimeseries.so $container/root/
+
+# Hiredis binding
+HIREDIS="$HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis"
+lxc file push $HIREDIS/build/package/lib/redis-binding.so $container/root/
+lxc file push $HIREDIS/conf.d/project/etc/redis-binding-cloud-config.json $container/root/
+lxc file push -r $HIREDIS/build/package/htdocs $container/root/
+lxc file push $HIREDIS/scripts/run-redis-binding-cloud-container $container/root/
+
+# Setup port redirections
+lxc config device add $container binder-port proxy listen=tcp:0.0.0.0:1235 connect=tcp:127.0.0.1:1235
+lxc config device add $container binder-tcp proxy listen=tcp:0.0.0.0:1212 connect=tcp:127.0.0.1:1212
+
+# Run Redis binding
+lxc exec $container -- /root/run-redis-binding-cloud-container
