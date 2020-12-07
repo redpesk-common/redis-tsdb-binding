@@ -75,8 +75,8 @@ set (PKG_REQUIRED_LIST
 	libmicrohttpd>=0.9.55
 	uuid
 	liburcu
-	afb-helpers
-	appcontroller
+	afb-libhelpers
+	afb-libcontroller
 	hiredis
 )
 
