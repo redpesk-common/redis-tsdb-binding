@@ -2,39 +2,36 @@
 
 set -o errexit
 
-if [[ -z "$1" ]]; then
-    echo "error: need to provide an F33 container name!"
-    exit 1
-fi
-container="$1"
+CONTAINER="f33-redpesk-marine"
 
-#lxc exec $container -- dnf update -y
-#lxc exec $container -- dnf install -y libmicrohttpd-devel hiredis
+#lxc launch images:fedora/33 $CONTAINER
+#lxc exec $CONTAINER -- dnf update -y
+#lxc exec $CONTAINER -- dnf install -y libmicrohttpd-devel hiredis
 
 # Binder
-lxc exec $container -- mkdir -p /usr/share/afb-binder/
-lxc file push /usr/lib64/{libafb.so,libafb.so.4} $container/usr/lib64/
-lxc file push /usr/bin/afb-binder $container/usr/bin/
-lxc file push -r /usr/share/afb-binder/monitoring $container/usr/share/afb-binder
-lxc exec $container -- afb-binder --help
+lxc exec $CONTAINER -- mkdir -p /usr/share/afb-binder/
+lxc file push /usr/lib64/{libafb.so,libafb.so.4} $CONTAINER/usr/lib64/
+lxc file push /usr/bin/afb-binder $CONTAINER/usr/bin/
+lxc file push -r /usr/share/afb-binder/monitoring $CONTAINER/usr/share/afb-binder
+lxc exec $CONTAINER -- afb-binder --help
 
 # Redis
-lxc file push $HOME/Documents/Dev/repos/community/redis/src/redis-server $container/root/
-lxc file push $HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis/scripts/redis-cloud-container.conf $container/root/
+lxc file push $HOME/Documents/Dev/repos/community/redis/src/redis-server $CONTAINER/root/
+lxc file push $HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis/scripts/redis-cloud-container.conf $CONTAINER/root/
 
 # Redis TS
-lxc file push $HOME/Documents/Dev/repos/iotbzh/RedisTimeSeries/bin/linux-x64-release/redistimeseries.so $container/root/
+lxc file push $HOME/Documents/Dev/repos/iotbzh/RedisTimeSeries/bin/linux-x64-release/redistimeseries.so $CONTAINER/root/
 
 # Hiredis binding
 HIREDIS="$HOME/Documents/Dev/repos/iotbzh/rp-service-hiredis"
-lxc file push $HIREDIS/build/package/lib/redis-binding.so $container/root/
-lxc file push $HIREDIS/conf.d/project/etc/redis-binding-cloud-config.json $container/root/
-lxc file push -r $HIREDIS/build/package/htdocs $container/root/
-lxc file push $HIREDIS/scripts/run-redis-binding-cloud-container $container/root/
+lxc file push $HIREDIS/build/package/lib/redis-binding.so $CONTAINER/root/
+lxc file push $HIREDIS/conf.d/project/etc/redis-binding-cloud-config.json $CONTAINER/root/
+lxc file push -r $HIREDIS/build/package/htdocs $CONTAINER/root/
+lxc file push $HIREDIS/scripts/redis-binding-in-container-entrypoint $CONTAINER/root/
 
 # Setup port redirections
-lxc config device add $container binder-port proxy listen=tcp:0.0.0.0:1235 connect=tcp:127.0.0.1:1235
-lxc config device add $container binder-tcp proxy listen=tcp:0.0.0.0:1212 connect=tcp:127.0.0.1:1212
+lxc config device add $CONTAINER binder-port proxy listen=tcp:0.0.0.0:1235 connect=tcp:127.0.0.1:1235
+lxc config device add $CONTAINER binder-tcp proxy listen=tcp:0.0.0.0:1212 connect=tcp:127.0.0.1:1212
 
 # Run Redis binding
-lxc exec $container -- /root/run-redis-binding-cloud-container
+# lxc exec $CONTAINER -- /root/start-redis-binding-in-CONTAINER

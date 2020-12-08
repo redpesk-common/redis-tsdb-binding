@@ -1,0 +1,2 @@
+#!/bin/bash -x
+lxc exec f33-redpesk-marine /root/redis-binding-in-container-entrypoint
