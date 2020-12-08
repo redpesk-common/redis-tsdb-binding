@@ -74,6 +74,7 @@ This is thus the expected output of *ts.mrange*:
 ```json
 {
   "response":{
+    "class":"sensor2",
     "ts": [1606743420408, 1606743426621, 1606743429893],
     "data": [
         [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],  
@@ -86,9 +87,9 @@ This is thus the expected output of *ts.mrange*:
 ```
 
 The advantage of such a representation is that it can directly we used for insertion
-in database (column by column)
+in database (column by column). This is what the ts_minsert function does.
 
-... which can be, with some little work, represented as such for the end user:
+These data can be, with some little work, represented as such for the end user:
 
 -------------------------
 

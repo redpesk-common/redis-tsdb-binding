@@ -388,6 +388,8 @@ int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** 
     json_object * resobj = json_object_new_object();
     json_object * ts_array = json_object_new_array();
     json_object * column_array = json_object_new_array();
+
+    json_object_object_add(resobj, "class", json_object_new_string(class));  
     json_object_object_add(resobj, "ts", ts_array);
     json_object_object_add(resobj, "data", column_array);  
 
@@ -407,7 +409,7 @@ int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** 
         goto done;
 
     redisReply * column0 = rep->element[0];
-    redisReply * samples0   = column0->element[2];
+    redisReply * samples0 = column0->element[2];
     
     // fill the timestamps header
     for (int ix=0; ix< samples0->elements; ix++) {

@@ -142,6 +142,7 @@ expected output format:
 ```json
 {
   "response":{
+    "class":"sensor2",
     "ts": [1606743420408, 1606743426621, 1606743429893],
     "data": [
         [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],  
@@ -152,6 +153,21 @@ expected output format:
   }
 }
 ```
+
+### replication
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_minsert '{ "ts": [1606743420408, 1606743426621, 1606743429893], "data": [ [ "sensor2[0]", [ "cool" , "cool, "cool" ] ], [ "sensor2[1]", [ "groovy", groovy", "groovy" ] ], [ "sensor2[2]", [ 6, 6, 6 ] ], [ "sensor2[3]", [ 23.3, 23.6, 23.7 ] ] ]  }'
+
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_minsert '{ "ts": [1606743420408, 1606743426621, 1606743429893], "data": [ 1, 3]  }'
+
+
+
+### ... aggregation rule on composite objects
+
+```bash
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_maggregate '{ "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":500} }'
+```
+
 
 ### Deletion
 

@@ -62,6 +62,24 @@ nomem:
 
 }
 
+static int _redisPutBlob(afb_req_t request, int * argc, char ** argv, size_t * argvlen) {
+    return _redisPutStr(request, "BLOB", argc, argv, argvlen);
+}
+
+static int _redisPutDuplicatePolicyLast(afb_req_t request, int * argc, char ** argv, size_t * argvlen) {
+    int ret = -1;
+
+    if (_redisPutStr(request, "DUPLICATE_POLICY", argc, argv, argvlen) != 0)
+        goto failed;
+    if (_redisPutStr(request, "LAST", argc, argv, argvlen) != 0)
+        goto failed;
+
+    ret = 0;
+failed:
+    return ret;
+}
+
+
 #ifdef DEBUG
 static void _redisDisplayCmd(afb_req_t request, int argc, const char ** argv) {
     char str[256];
@@ -293,6 +311,32 @@ fail:
     return ret;
 
 }
+
+static redisReply * get_class_keys(afb_req_t request, const char * class);
+
+typedef int (*key_func) (afb_req_t request, const char * key, json_object * param);
+
+static int class_keys_for_each(afb_req_t request, const char* class, key_func func, json_object * param) {
+    int ret = -1;
+    redisReply * keys = get_class_keys(request, class);
+    if (keys == NULL)
+        goto fail;
+
+    for (int ix = 0; ix < keys->elements; ix++) {
+        redisReply * elem = keys->element[ix];
+        char * key = elem->str;
+
+        ret = func(request, key, param);
+        if (ret != 0) {
+            goto fail;
+        }
+    }
+
+    ret = 0;
+fail:
+    return ret;
+}
+
 
 
 #define XSTR(s) str(s)
@@ -809,7 +853,7 @@ static int internal_redis_add_string(afb_req_t request, const char * key, const 
             goto fail;
     }
 
-    if ((ret = _redisPutStr(request, "BLOB", &argc, argv, argvlen)) != 0)
+    if ((ret = _redisPutBlob(request, &argc, argv, argvlen)) != 0)
         goto fail;
 
     if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, resstr)) != 0)
@@ -1800,11 +1844,6 @@ static void ts_jget (afb_req_t request) {
         goto fail;
     }
 
-    // TODO
-    json_object * debugJ;
-    redisReplyToJson(request, rep, &debugJ );
-    fprintf(stderr, "%s: debuhJ %s\n", __func__, json_object_get_string(debugJ));
-
     if ((ret = mgetReply2Json( rep, class, &replyJ )) != 0)
         goto fail;
 
@@ -1918,29 +1957,282 @@ done:
 
 }
 
+/* Attempts to use TS.CREATE, or TS.ALTER, to properly set the class label, blob flag, and duplication policy */
 
-static void ts_jdel (afb_req_t request) {
-
-    json_object* argsJ = afb_req_json(request);
-    json_object* replyJ = NULL;
-
-    char * class = NULL;
-    char * resstr = NULL;
-    int ret = -EINVAL;
+static int _redisSetKeyProperties(afb_req_t request, const char * key, const char * class, bool isBlob) {
+    int ret  = -1;
+    int argc = 7; // 1 cmd, 1 key, 3 for label, 2 duplicate policy
     char ** argv = NULL;
     size_t * argvlen = NULL;
+    char* resstr;
 
-    int err = wrap_json_unpack(argsJ, "{s:s !}",
-        "class", &class );
+    if (isBlob)
+        argc++;
+
+    if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0) 
+        goto fail;
+
+    argc = 0;
+
+    if (redisPutCmd(request, "TS.CREATE", &argc, argv, argvlen) != 0)
+        goto fail;
+
+    if (_redisPutStr(request, key, &argc, argv, argvlen) != 0)
+        goto fail;
+
+    if (internal_redis_put_class_label(request, class, &argc, argv, argvlen) !=0 )
+        goto fail;
+    
+    if (_redisPutDuplicatePolicyLast(request, &argc, argv, argvlen) != 0)
+        goto fail;
+
+    if (isBlob && _redisPutBlob(request, &argc, argv, argvlen) != 0) 
+        goto fail;
+
+    if (redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) == 0)
+        goto done;
+
+    // if CREATE fails, attempt with ALTER
+
+    free(argv[0]);
+    argv[0] = strdup("TS.ALTER");
+    argvlen[0] = strlen(argv[0]);
+
+    if (redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr) != 0)
+        goto fail;
+
+done:
+    ret = 0;
+
+fail:
+    argvCleanup(argc, argv, argvlen);
+    return ret;
+
+}
+
+/*
+ts_minsert has been created for replicating a data set
+
+Expected input: a timestamps array, and an array of samples
+{
+    "class":"sensor2",
+    "ts": [1606743420408, 1606743426621, 1606743429893],
+    "data": [
+        [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],           // a sample
+        [ "sensor2[1]", [ "groovy", "groovy", "groovy" ] ],  
+        [ "sensor2[2]", [ 6, 6, 6 ] ],  
+        [ "sensor2[3]", [ 23.3, 23.6, 23.7 ] ]
+    ]
+  }
+
+*/
+
+static void ts_minsert (afb_req_t request) {
+    char ** tsArray = NULL;
+    json_object* argsJ = afb_req_json(request);
+    char * resstr;
+    char * class;
+    uint32_t nbts = 0;
+
+    json_object * timestampsTableJ;
+    json_object * dataJ;
+    json_object * replyJ = NULL;
+    
+    int err = wrap_json_unpack(argsJ, "{s:s s:o, s:o!}",
+        "class", &class,
+        "ts", &timestampsTableJ,
+        "data", &dataJ
+    );
+
     if (err) {
         err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
         goto fail;
     }
 
-    /* retrieves keys having this class label, by doing a query on the index */
+    if (!json_object_is_type(timestampsTableJ, json_type_array)) {
+        err = asprintf(&resstr, "json error: '%s' should be an array of timestamps", json_object_get_string(argsJ));
+        goto fail;
+    }
 
+    if (!json_object_is_type(dataJ, json_type_array)) {
+        err = asprintf(&resstr, "json error: '%s' should be an array of samples", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    /* The number of sample values must match the number of timestamps */
+
+    nbts = json_object_array_length(timestampsTableJ);
+    uint32_t nbkeys = json_object_array_length(dataJ);
+
+    /* compute the string converted timestamp once */
+    tsArray = (char**) calloc(nbts, sizeof(char*));
+    if (!tsArray)
+        goto fail;
+
+    for (int ix=0; ix<nbts; ix++) {
+        json_object * tsJ = json_object_array_get_idx(timestampsTableJ, ix);
+        int ret = asprintf(&tsArray[ix], "%ld", json_object_get_int64(tsJ));
+        if (!ret)
+            goto fail;
+    }
+
+    for (int ix=0; ix < nbkeys; ix++) {
+        const char * key;
+        json_object* sampleJ = json_object_array_get_idx(dataJ, ix);
+
+        if (!json_object_is_type(sampleJ, json_type_array))  {
+            err = asprintf(&resstr, "json error: sample '%s' must be an array", json_object_get_string(sampleJ));
+            goto fail;
+        }
+
+        if (json_object_array_length(sampleJ) != 2) {
+            err = asprintf(&resstr, "json error: sample '%s' must have 2 entries", json_object_get_string(sampleJ));
+            goto fail;
+        }
+
+        json_object* keyJ = json_object_array_get_idx(sampleJ, 0);
+        json_object* valuesJ = json_object_array_get_idx(sampleJ, 1);
+
+        if (!json_object_is_type(keyJ, json_type_string))  {
+            err = asprintf(&resstr, "json error: key '%s' should be a string", json_object_get_string(keyJ));
+            goto fail;
+        }
+
+        key = json_object_get_string(keyJ);
+
+        if (!json_object_is_type(valuesJ, json_type_array))  {
+            err = asprintf(&resstr, "json error: key '%s' must have an array of values (instead of %s)", key, json_object_get_string(valuesJ));
+            goto fail;
+        }
+
+        int nbvalues = json_object_array_length(valuesJ);
+        if (nbvalues != nbts) {
+            err = asprintf(&resstr, "json error: key '%s' should have %d values", key, nbts);
+            goto fail;
+        }
+        for (int jx=0; jx < nbvalues; jx++)  {
+            
+            char ** argv = NULL;
+            size_t * argvlen = NULL;
+            char * resstr = NULL;
+            int ret;
+
+            int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestamp, 1 for value */
+
+            json_object * valueJ = json_object_array_get_idx(valuesJ, jx);
+            json_type type = json_object_get_type(valueJ);
+
+            if (jx == 0) {
+                if (_redisSetKeyProperties(request, key, class, type == json_type_string) != 0)
+                    goto fail;
+            }
+
+            if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0) 
+                goto fail;
+
+            argc = 0;
+
+            // +3
+            if ((ret = internal_redis_add_cmd(request, key, tsArray[jx], &argc, argv, argvlen)) != 0)
+                goto fail;
+
+            if (type == json_type_boolean) {
+                ret = redisPutValue(request, json_object_get_boolean(valueJ), &argc, argv, argvlen);
+            }
+            else if (type == json_type_double) {
+                ret = redisPutValue(request, json_object_get_double(valueJ), &argc, argv, argvlen);
+            }
+            else if (type == json_type_int) {
+                ret = redisPutValue(request, json_object_get_int(valueJ), &argc, argv, argvlen);
+            }
+            else if (type == json_type_string) {
+                ret = _redisPutStr(request, json_object_get_string(valueJ), &argc, argv, argvlen);
+            }
+            else
+                goto fail;
+
+            if (ret != 0)
+                goto fail;
+
+            if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr)) != 0)
+                goto fail;
+            
+            argvCleanup(argc, argv, argvlen);
+
+        }
+
+    }
+
+    afb_req_success(request, replyJ, resstr);
+    goto done;
+
+fail:
+    afb_req_fail(request, "error", resstr);
+done:
+    if (tsArray)
+        for (int ix=0; ix<nbts;ix++)
+            free(tsArray[ix]);
+    free(tsArray);
+    return;
+
+}
+
+
+static int _key_aggregate(afb_req_t request, const char * key, json_object * agg) {
+    fprintf(stderr, "TODO agg on %s", key);
+    return 0;
+}
+
+/*
+Creates a compaction rule for all the keys of class 'class'
+
+'{ "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":500} }'
+
+*/
+
+static void ts_maggregate (afb_req_t request) {
+    char * resstr = NULL;
+    json_object* argsJ = afb_req_json(request);
+    json_object* replyJ = NULL;
+    json_object* aggregationJ;
+    char * class;
+    char * name;
+
+    int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:o!}",
+        "class", &class,
+        "name", &name,
+        "aggregation", &aggregationJ
+    );
+    if (err) {
+        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    err = class_keys_for_each(request, class, _key_aggregate, aggregationJ);
+    if (err) {
+        err = asprintf(&resstr, "failed to apply ag rule on class '%s', aggregation: '%s'", class, json_object_get_string(aggregationJ));
+        goto fail;
+    }
+
+    afb_req_success(request, replyJ, resstr);
+    goto done;
+
+fail:
+    afb_req_fail(request, "error", resstr);
+done:
+    return;
+
+}
+
+/* Get all the keys of the given class */
+
+static redisReply * get_class_keys(afb_req_t request, const char * class) {
     int argc = 2; /* cmd + filter */
     char * filter = NULL;
+    int ret;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    redisReply* rep = NULL;
 
     if ((ret = asprintf(&filter, "class=%s", class)) == -1)
         goto fail;
@@ -1955,21 +2247,20 @@ static void ts_jdel (afb_req_t request) {
     if (_redisPutStr(request, filter, &argc, argv, argvlen) != 0)
         goto fail;
 
-    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
-    if (rep == NULL) {
-        ret = asprintf(&resstr, "redis-error: redis command failed");
-        goto fail;
-    }
+    rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
 
-    AFB_API_INFO (request->api, "%s: cmd result type %s, str %s", __func__, REDIS_REPLY_TYPE_STR(rep->type), rep->str);
-
-    if (rep->type != REDIS_REPLY_ARRAY) {
-        ret = asprintf(&resstr, "%s: unexpected response type", __func__);
-        goto fail;
-    }
-
+fail:
     argvCleanup(argc, argv, argvlen);
-    argc = 1 + (uint)rep->elements;
+    return rep;
+}
+
+
+static int _key_del(afb_req_t request, const char * key, json_object * not_used) {
+    int argc = 2;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    redisReply* rep = NULL;
+    int ret = -1;
 
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
         goto fail;
@@ -1979,15 +2270,39 @@ static void ts_jdel (afb_req_t request) {
     if ((ret = redisPutCmd(request, "DEL", &argc, argv, argvlen)) != 0)
         goto fail;
 
-    for (int ix = 0; ix<rep->elements; ix++) {
-        redisReply * elem = rep->element[ix];
-        if ((ret = _redisPutStr(request, elem->str, &argc, argv, argvlen)) != 0)
+    if ((ret = _redisPutStr(request, key, &argc, argv, argvlen)) != 0)
         goto fail;
-    }
 
     rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
-        ret = asprintf(&resstr, "redis-error: redis command failed");
+        AFB_API_ERROR (request->api, "%s: error while deleting key %s", __func__, key);
+        goto fail;
+    }
+
+    ret = 0;
+fail:
+    return ret;
+
+}
+
+static void ts_jdel (afb_req_t request) {
+
+    json_object* argsJ = afb_req_json(request);
+    json_object* replyJ = NULL;
+
+    char * class = NULL;
+    char * resstr = NULL;
+
+    int err = wrap_json_unpack(argsJ, "{s:s !}",
+        "class", &class );
+    if (err) {
+        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    err = class_keys_for_each(request, class, _key_del, NULL);
+    if (err) {
+        err = asprintf(&resstr, "failed to delete keys of class '%s'", class);
         goto fail;
     }
 
@@ -1995,15 +2310,10 @@ static void ts_jdel (afb_req_t request) {
     goto done;
 
 fail:
-    if (ret == -ENOMEM)
-        ret = asprintf(&resstr, INSUFFICIENT_MEMORY );
     afb_req_fail(request, "error", resstr);
 
 done:
-    free(filter);
     free(resstr);
-    argvCleanup(argc, argv, argvlen);
-
     return;
 
 }
@@ -2030,8 +2340,11 @@ static afb_verb_t CtrlApiVerbs[] = {
 
     { .verb = "ts_jinsert", .callback = ts_jinsert, .info = "insert a json object in the database "},
     { .verb = "ts_jget", .callback = ts_jget, .info = "gets a flattened json object from the database (latest sample) "},
+    { .verb = "ts_jdel", .callback = ts_jdel, .info = "deletes a flattened json object from the database, giving its class name"},    
+    { .verb = "ts_minsert", .callback = ts_minsert, .info = "insert replication set in the database "},
     { .verb = "ts_mrange", .callback = ts_mrange, .info = "gets a flattened json object from the database (with time range) "},
-    { .verb = "ts_jdel", .callback = ts_jdel, .info = "deletes a flattened json object from the database, giving its class name"},
+    { .verb = "ts_maggregate", .callback = ts_maggregate, .info = "creates a compaction rule for all the keys of the given class"},
+
     { .verb = NULL} /* marker for end of the array */
 };
 
