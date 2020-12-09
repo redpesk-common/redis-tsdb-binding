@@ -1,5 +1,7 @@
 #!/bin/bash -x
-afb-client-demo ws://localhost:1236/api redis ts_jinsert \
+afb-client ws://localhost:1236/api redis ts_jinsert \
    '{ "class":"sensor2", "data": [ "nice" , "fresh", 6 , 23.5 ] }'
-afb-client-demo ws://localhost:1236/api redis ts_jinsert \
+afb-client ws://localhost:1236/api redis ts_jinsert \
    '{ "class":"sensor2", "data": [ "cool" , "groovy", 7 , 37.8 ] }'
+afb-client ws://localhost:1236/api redis ts_jinsert \
+   '{ "class":"sensor3", "data": [ "vincent" , "super", 42 , 77.33 ] }'
