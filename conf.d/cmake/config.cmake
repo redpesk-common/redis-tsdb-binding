@@ -76,7 +76,7 @@ set (PKG_REQUIRED_LIST
 	uuid
 	liburcu
 	afb-helpers
-	appcontroller
+	afb-libcontroller
 	hiredis
 )
 
@@ -205,7 +205,7 @@ set(AFB_REMPORT "1234" CACHE PATH "Default binder listening port")
 
 # Print a helper message when every thing is finished
 # ----------------------------------------------------
-set(CLOSING_MESSAGE "Typical binding launch: afb-daemon --name redis --port=${AFB_REMPORT} --workdir=${CMAKE_BINARY_DIR} --ldpath=/dev/null --binding=package/lib/redis-binding.so --roothttp=package/htdocs --token=\"${AFB_TOKEN}\" --tracereq=common --verbose")
+set(CLOSING_MESSAGE "Typical binding launch: afb-binder --name redis --port=${AFB_REMPORT} --workdir=${CMAKE_BINARY_DIR} --ldpath=/dev/null --binding=package/lib/redis-binding.so --roothttp=package/htdocs --tracereq=common --verbose")
 set(PACKAGE_MESSAGE "Install widget file using in the target : afm-util install ${PROJECT_NAME}.wgt")
 
 # Optional schema validator about now only XML, LUA and JSON
