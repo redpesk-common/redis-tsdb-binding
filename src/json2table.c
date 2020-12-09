@@ -108,14 +108,12 @@ static json_object * redis_value_to_json(const redisReply * elem) {
 
 /* converts a flattened name (something like 'foo.bar[3].dum') into a json structure 
 --- > 
-    { "foo": 
         { "bar": [ ?, ?, "dum": ? ] } 
-    }
+
     and returns pointer to the targetted location (in the above case, the value associated to the "dum" key)
     That location is always a 'single' value (not a composite object)
 
-    In the case of simple 'foo' column, returns a pointer to the parent object
-    -- > {}
+    foo is skipped because it is the class name.
 
     When the result is an array, index is set different of -1
     When the result is an object, index is left to -1, and parent and key are set
@@ -132,14 +130,27 @@ static void deflatten(char *name, json_object *obj, int * index, json_object ** 
     size_t namelen = strlen(name);
     json_object * _obj = obj;
     char *base = NULL;
+    bool once = false;
+    const char * eos = name+namelen;
 
     for (ptr = name;; ptr = NULL) {
+
         char *token = strtok(ptr, ".");
 
-        if (token == NULL)
-            break;
+        /* skip the first base, because it is the class name */
+        if (!once) {
+            once = true;
+            continue;
+        }
 
+        /* last token ? */
+        if (token == NULL) {
+            break;
+        }
+
+        _index = -1;
         array = false;
+        bool end_of_parsing = false;
 
         base = token;
         char *closeb = NULL;
@@ -159,7 +170,11 @@ static void deflatten(char *name, json_object *obj, int * index, json_object ** 
             }
         }
 
-        bool end_of_parsing = (closeb == name + namelen - 1);
+        /* we use that logic because in case of brackets, the token is altered to avoid a copy */
+        if (closeb)
+            end_of_parsing = (closeb == eos - 1);
+        else
+            end_of_parsing = (token+strlen(token) == eos);
 
         json_object *jvalue;
 
@@ -169,6 +184,7 @@ static void deflatten(char *name, json_object *obj, int * index, json_object ** 
             _obj = jvalue;
         }
         else {
+
             json_object *newobject;
 
             if (array) {
@@ -177,18 +193,18 @@ static void deflatten(char *name, json_object *obj, int * index, json_object ** 
                 _obj = newobject;
             }
             else if (!end_of_parsing) {
+                /* only the caller will add the key/value object */
                 newobject = json_object_new_object();
                 json_object_object_add(_obj, base, newobject);
                 _obj = newobject;
             }
-
         }
 
         /* 
             At this step, _obj points to an array, or an object.
             If we are at the end of parsing, that means that the array element
             will contain a simple value, not an object.
-            */
+        */
 
         if (!array)
             continue;
@@ -206,7 +222,6 @@ static void deflatten(char *name, json_object *obj, int * index, json_object ** 
             _obj = elem;
             continue;
         }
-
     }
 
     *parent = _obj;
@@ -251,10 +266,6 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
     int ret = -1;
 
     json_object *resobj = json_object_new_object();
-    json_object *samplearray = json_object_new_array();
-    json_object_object_add(resobj, class, samplearray);
-    json_object *sampleobj = json_object_new_object();
-    json_object_array_add(samplearray, sampleobj);
         
     /* according to the documentation, each element is an array with 3 items:
     1 - key name
@@ -265,13 +276,15 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
     if (rep->elements == 0)
         goto done;
 
+    json_object_object_add(resobj, "class", json_object_new_string(class));
+    json_object * sampledataJ = json_object_new_object();
+    json_object_object_add(resobj, "data", sampledataJ);
+
     redisReply *elem0 = rep->element[0];
     redisReply *data0 = elem0->element[2];
     long long int timestamp = data0->element[0]->integer;
 
-    json_object_object_add(sampleobj, "ts", json_object_new_int64(timestamp));
-    json_object * sampledataJ = json_object_new_object();
-    json_object_object_add(sampleobj, "data", sampledataJ);
+    json_object_object_add(resobj, "ts", json_object_new_int64(timestamp));
 
     for (int ix = 0; ix < rep->elements; ix++)
     {
@@ -306,8 +319,9 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
         if (index == -1) {
             json_object_object_add(parentJ, key, valueJ);
         }
-        else
+        else {
             json_object_array_put_idx(parentJ, index, valueJ);
+        }
      }
 
 done:
