@@ -135,7 +135,7 @@ nomem:
     return ret;
 }
 
-/* a valid timestamp string can parsed as a UNIX timestamp (to an uint64), or a wildcard to automatic,
+/* a valid timestamp string can be parsed as a UNIX timestamp (to an uint64), or a wildcard to automatic,
    or '-' for the oldest, and '+' for the most recent */
 static int _redisCheckTimestamp(const char * timestampS) {
     int ret = -EINVAL;
@@ -1730,6 +1730,7 @@ static void ts_jinsert (afb_req_t request) {
     char * class = NULL;
     char * resstr = NULL;
     char * timestampS = NULL;
+    char * _timestampS = NULL;
     int ret = -EINVAL;
 
     int err = wrap_json_unpack(argsJ, "{s:s, s?s, s:o !}",
@@ -1743,8 +1744,16 @@ static void ts_jinsert (afb_req_t request) {
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
-    if (timestampS == NULL)
-        timestampS = "*";
+    if (timestampS == NULL) {
+        err = asprintf(&_timestampS , "%ld", time(NULL));
+        if (err == -1) {
+            fprintf(stderr, "%s ts error\n", __func__);
+            goto fail;
+        }
+    }
+    else {
+        _timestampS = timestampS;
+    }
 
     json2table(class, dataJ, &list);
 
@@ -1764,10 +1773,10 @@ static void ts_jinsert (afb_req_t request) {
 #endif
 
         if (pair->type == VALUE_TYPE_DOUBLE) {
-            if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, timestampS, class, &resstr)) != 0)
+            if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, _timestampS, class, &resstr)) != 0)
                 goto fail;
         } else {
-            if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, timestampS, class, &resstr)) != 0)
+            if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, _timestampS, class, &resstr)) != 0)
                 goto fail;
         }
     }
@@ -1783,6 +1792,9 @@ fail:
 
 done:
     free(resstr);
+    if (timestampS == NULL)
+        free(_timestampS);
+
     return;
 }
 
@@ -2036,7 +2048,6 @@ static void ts_minsert (afb_req_t request) {
 
     json_object * timestampsTableJ;
     json_object * dataJ;
-    json_object * replyJ = NULL;
     
     int err = wrap_json_unpack(argsJ, "{s:s s:o, s:o!}",
         "class", &class,
@@ -2064,7 +2075,7 @@ static void ts_minsert (afb_req_t request) {
     nbts = json_object_array_length(timestampsTableJ);
     uint32_t nbkeys = json_object_array_length(dataJ);
 
-    /* compute the string converted timestamp once */
+    /* compute the 'converted to string' timestamp once */
     tsArray = (char**) calloc(nbts, sizeof(char*));
     if (!tsArray)
         goto fail;
@@ -2154,7 +2165,7 @@ static void ts_minsert (afb_req_t request) {
             if (ret != 0)
                 goto fail;
 
-            if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr)) != 0)
+            if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr)) != 0)
                 goto fail;
             
             argvCleanup(argc, argv, argvlen);
@@ -2163,7 +2174,7 @@ static void ts_minsert (afb_req_t request) {
 
     }
 
-    afb_req_success(request, replyJ, resstr);
+    afb_req_success(request, NULL, resstr);
     goto done;
 
 fail:

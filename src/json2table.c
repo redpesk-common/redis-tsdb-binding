@@ -367,6 +367,7 @@ And the expected result is:
 
 {
   "response":{
+    "class":"sensor2",
     "ts": [1606743420408, 1606743426621, 1606743429893],
     "data": [ 
         [ "sensor2[0]", [ "cool" , "cool, "cool" ] ],  
