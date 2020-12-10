@@ -5,8 +5,10 @@ set -o errexit
 CONTAINER="f33-redpesk-marine"
 
 #lxc launch images:fedora/33 $CONTAINER
-#lxc exec $CONTAINER -- dnf update -y
-#lxc exec $CONTAINER -- dnf install -y libmicrohttpd-devel hiredis
+# Wait for network to come up
+sleep 2
+lxc exec $CONTAINER -- dnf update -y
+lxc exec $CONTAINER -- dnf install -y libmicrohttpd-devel hiredis
 
 # Binder
 lxc exec $CONTAINER -- mkdir -p /usr/share/afb-binder/
