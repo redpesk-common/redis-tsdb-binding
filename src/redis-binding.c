@@ -18,6 +18,8 @@
 
 #define INSUFFICIENT_MEMORY "Insufficient memory"
 
+// #define DEBUG
+
 // default api to print log when apihandle not available
 afb_api_t AFB_default;
 
@@ -88,7 +90,7 @@ static void _redisDisplayCmd(afb_req_t request, int argc, const char ** argv) {
         strncat(str, argv[ix], 256-strlen(str)-1);
         strncat(str, " ", 256-strlen(str)-1);
     }
-    AFB_API_INFO (request->api, "%s", str);
+    AFB_API_INFO (request->api, "SENDING: %s", str);
 
 }
 #endif /* DEBUG */
@@ -211,7 +213,7 @@ static int redisPutLabels(afb_req_t request, json_object * labelsJ, int * argc, 
     int ret = -EINVAL;
     enum json_type type;
 
-    AFB_API_INFO (request->api, "%s: put labels", __func__);
+    AFB_API_INFO (request->api, "%s: put labels %s", __func__, json_object_get_string(labelsJ));
 
     if ((ret = _redisPutStr(request, "LABELS", argc, argv, argvlen)) != 0)
         goto fail;
@@ -433,6 +435,8 @@ done:
     return ret;
 }
 
+/* redisCommandArgv does not check the null pointer ! */
+
 static void * __redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) {
     redisReply * rep = NULL;
     if (c == NULL)
@@ -445,7 +449,7 @@ fail:
 
 static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -EINVAL;
-    
+
 #ifdef DEBUG
     _redisDisplayCmd(request, argc, argv);
 #endif /* DEBUG */
@@ -506,30 +510,13 @@ static void argvCleanup(int argc, char ** argv, size_t * argvlen) {
 
 }
 
-static void redis_create (afb_req_t request) {
-    json_object *argsJ = afb_req_json(request);
-    char * rkey = NULL;
-    int32_t retention = 0;
-    uint32_t uncompressed = false;
-    json_object * labelsJ = NULL;
-
+static int _redis_create(afb_req_t request, const char * key, int32_t retention, uint32_t uncompressed, json_object * labelsJ, bool blob , char ** resstr) {
+    int ret = 0;
     char ** argv = NULL;
     size_t * argvlen = NULL;
-    char * resstr = NULL;
-    int ret = -EINVAL;
 
-    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
-
-    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?b,s?o !}", 
-        "key", &rkey,
-        "retention", &retention,
-        "uncompressed", &uncompressed,
-        "labels", &labelsJ
-        );
-    if (err) {
-        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
-        goto fail;
-    }
+    AFB_API_INFO(request->api, "Creating key %s, retention %d, uncomp %d, labels %s, blob %d",
+                    key, retention, uncompressed, json_object_get_string(labelsJ), blob);
 
     int argc = 2; /* one slot for command name, one for the key */
     
@@ -544,6 +531,9 @@ static void redis_create (afb_req_t request) {
         argc += 2*json_object_object_length(labelsJ);
     }
 
+    if (blob)
+        argc++;
+
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
         goto fail;
 
@@ -552,7 +542,7 @@ static void redis_create (afb_req_t request) {
     if ((ret = redisPutCmd(request, "TS.CREATE", &argc, argv, argvlen)) != 0)
         goto fail;
 
-    if ((ret = redisPutKey(request, rkey, &argc, argv, argvlen)) != 0)
+    if ((ret = redisPutKey(request, key, &argc, argv, argvlen)) != 0)
         goto fail;
 
     if (retention) 
@@ -574,7 +564,49 @@ static void redis_create (afb_req_t request) {
         }
     }
 
-    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr)) != 0)
+    if (blob) {
+        ret = _redisPutBlob(request, &argc, argv, argvlen);
+        if (ret != 0)
+            goto fail;
+    }
+
+    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, resstr)) != 0)
+        goto fail;
+
+    ret = 0;
+
+fail:
+    argvCleanup(argc, argv, argvlen);
+    return ret;
+}
+
+static void redis_create (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    char * rkey = NULL;
+    int32_t retention = 0;
+    uint32_t uncompressed = false;
+    json_object * labelsJ = NULL;
+    uint32_t blob = false;
+
+    char * resstr = NULL;
+    int ret = -EINVAL;
+
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?b,s?o,si !}",
+        "key", &rkey,
+        "retention", &retention,
+        "uncompressed", &uncompressed,
+        "labels", &labelsJ,
+        "blob", &blob
+        );
+    if (err) {
+        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    ret = _redis_create(request, rkey, retention, uncompressed, labelsJ, blob, &resstr);
+    if (ret != 0)
         goto fail;
 
     afb_req_success(request, NULL, NULL);
@@ -586,10 +618,7 @@ fail:
     afb_req_fail(request, "error", resstr);
 
 done:
-
     free(resstr);
-    argvCleanup(argc, argv, argvlen);
-
     return;
 }
 
@@ -1252,18 +1281,50 @@ static void redis_incrby (afb_req_t request) {
     _redis_incr_or_decr_by(request, true);
 }
 
+static int _redis_create_rule(afb_req_t request, const char * srckey, const char * destkey, json_object * aggregationJ, char ** resstr ) {
+
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    int ret = -1;
+
+    int argc = 6; // cmd, source, dest, +3 for aggregation
+
+    if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
+        goto fail;
+        
+    argc = 0;
+
+    if ((ret = redisPutCmd(request, "TS.CREATERULE", &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisPutKey(request, srckey, &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisPutKey(request, destkey, &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisPutAggregation(request, aggregationJ, &argc, argv, argvlen)) != 0)
+        goto fail;
+
+    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, resstr)) != 0)
+        goto fail;
+
+    ret = 0;
+
+fail:
+    argvCleanup(argc, argv, argvlen);
+    return ret;
+}
+
 static void redis_create_rule (afb_req_t request) {
     json_object *argsJ = afb_req_json(request);
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
     char * skey = NULL;
     char * dkey = NULL;
-
-    char ** argv = NULL;
-    size_t * argvlen = NULL;
-    char * resstr = NULL;
-
     json_object * aggregationJ = NULL;
+
+    char * resstr;
     int ret = -EINVAL;
 
     int err = wrap_json_unpack(argsJ, "{s:s,s:s,s:o !}",
@@ -1276,26 +1337,8 @@ static void redis_create_rule (afb_req_t request) {
         goto fail;
     }
 
-    int argc = 6; // cmd, source, dest, +3 for aggregation
-
-    if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
-        goto fail;
-        
-    argc = 0;
-
-    if ((ret = redisPutCmd(request, "TS.CREATERULE", &argc, argv, argvlen)) != 0)
-        goto fail;
-
-    if ((ret = redisPutKey(request, skey, &argc, argv, argvlen)) != 0)
-        goto fail;
-
-    if ((ret = redisPutKey(request, dkey, &argc, argv, argvlen)) != 0)
-        goto fail;
-
-    if ((ret = redisPutAggregation(request, aggregationJ, &argc, argv, argvlen)) != 0)
-        goto fail;
-
-    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr)) != 0)
+    ret = _redis_create_rule(request, skey, dkey, aggregationJ, &resstr);
+    if (ret != 0)
         goto fail;
 
     afb_req_success(request, NULL, NULL);
@@ -1307,9 +1350,7 @@ fail:
     afb_req_fail(request, "error", resstr);
 
 done:
-
     free(resstr);
-    argvCleanup(argc, argv, argvlen);
     return;
 
 }
@@ -1610,24 +1651,11 @@ done:
 
 }
 
-static void redis_info (afb_req_t request) {
-    json_object *argsJ = afb_req_json(request);
-    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+static int _redis_info(afb_req_t request, const char * key, json_object ** replyJ, char ** resstr) {
 
-    json_object * replyJ = NULL;
-    char * keyS = NULL;
-
-    char * resstr = NULL;
     char ** argv = NULL;
     size_t * argvlen = NULL;
-    int ret = -EINVAL;
-
-    int err = wrap_json_unpack(argsJ, "{s:s !}", 
-        "key", &keyS );
-    if (err) {
-        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
-        goto fail;
-    }
+    int ret = -1;
 
     int argc = 2; // cmd + key
 
@@ -1639,10 +1667,36 @@ static void redis_info (afb_req_t request) {
     if ((ret = redisPutCmd(request, "TS.INFO", &argc, argv, argvlen )) != 0)
         goto fail;
 
-    if ((ret = redisPutKey(request, keyS, &argc, argv, argvlen)) != 0)
+    if ((ret = redisPutKey(request, key, &argc, argv, argvlen)) != 0)
         goto fail;
 
-    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, &replyJ, &resstr)) != 0)
+    if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, replyJ, resstr)) != 0)
+        goto fail;
+
+    ret = 0;
+fail:
+    argvCleanup(argc, argv, argvlen);
+    return ret;
+}
+
+static void redis_info (afb_req_t request) {
+    json_object *argsJ = afb_req_json(request);
+    AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
+
+    json_object * replyJ = NULL;
+    char * keyS = NULL;
+    char * resstr = NULL;
+    int ret = -EINVAL;
+
+    int err = wrap_json_unpack(argsJ, "{s:s !}",
+        "key", &keyS );
+    if (err) {
+        err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+
+    ret = _redis_info(request, keyS, &replyJ, &resstr);
+    if (ret != 0)
         goto fail;
     
     afb_req_success(request, replyJ, NULL);
@@ -1655,9 +1709,7 @@ fail:
     free(replyJ);
 
 done:
-
     free(resstr);
-    argvCleanup(argc, argv, argvlen);
     return;
 }
 
@@ -1799,7 +1851,7 @@ done:
 }
 
 
-static void ts_jget (afb_req_t request) {
+static void ts_mget (afb_req_t request) {
 
     json_object* argsJ = afb_req_json(request);
     json_object* replyJ = NULL;
@@ -2188,10 +2240,154 @@ done:
 
 }
 
+static json_object * ts_info_get_field(json_object* infoJ, const char * fieldS) {
+    for (int ix=0; ix<json_object_array_length(infoJ); ix++) {
 
-static int _key_aggregate(afb_req_t request, const char * key, json_object * agg) {
-    fprintf(stderr, "TODO agg on %s", key);
-    return 0;
+        json_object * field = json_object_array_get_idx(infoJ, ix);
+        if (!json_object_is_type(field, json_type_string))
+            continue;
+
+        if (strcmp(json_object_get_string(field), fieldS) == 0) {
+            return json_object_array_get_idx(infoJ, ix+1);
+        }
+    }
+    return NULL;
+}
+
+/*
+converts:
+[
+    [
+    "class",
+    "sensor2"
+    ]
+]
+to:
+{ "class":"sensor2" }
+*/
+
+
+static json_object* ts_info_labels_to_create_labels(json_object * infoLabelsJ) {
+
+    fprintf(stderr, "converting labels %s\n", json_object_get_string(infoLabelsJ));
+
+    json_object * result = json_object_new_object();
+
+    for (int ix=0; ix<json_object_array_length(infoLabelsJ); ix++) {
+        json_object* labelJ = json_object_array_get_idx(infoLabelsJ, ix);
+
+        fprintf(stderr, "converting label %s\n", json_object_get_string(labelJ));
+
+        if (json_object_array_length(labelJ) != 2) {
+            fprintf(stderr, "wrong size\n");
+            continue;
+        }
+
+        json_object* keyJ = json_object_array_get_idx(labelJ, 0);
+        json_object* valueJ= json_object_array_get_idx(labelJ, 1);
+
+        if (!json_object_is_type(keyJ, json_type_string))
+            continue;
+
+        json_object_object_add(result, json_object_get_string(keyJ), valueJ);
+    }
+    return result;
+}
+
+/*
+    creates a subkey with the given aggregation rule
+    For instance, if the keyname is foo[1].bla,
+    the subkey will be called foo[1].bla_<name>
+    For convenience and easy retrieval of all the keys, the following label is added:
+
+    "class=<parent_class>|<name>" 
+
+*/
+
+static int _key_aggregate(afb_req_t request, const char * key, json_object * argsJ) {
+    int ret = -1;
+    char * class;
+    char * name;
+    json_object * aggregationJ;
+    json_object * infoJ;
+
+    char * dstkey;
+    char * resstr = NULL;
+    bool blob = false;
+
+    int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:o!}",
+        "class", &class,
+        "name", &name,
+        "aggregation", &aggregationJ
+    );
+    if (err)
+        goto fail;
+
+    ret = asprintf(&dstkey, "%s|%s", key, name);
+    if (ret == -1)
+        goto fail;
+
+    // get info about the key
+    ret = _redis_info(request, key, &infoJ, &resstr);
+    if (ret != 0) {
+        AFB_API_ERROR(request->api, "Failed to get info about key %s", resstr);
+        goto fail;
+    }
+
+    const char* typeS = NULL;
+    json_object* typeJ = ts_info_get_field(infoJ, "type");
+
+    if (typeJ && json_object_is_type(typeJ, json_type_string)) {
+        typeS = json_object_get_string(typeJ);
+    }
+
+    if (strcmp(typeS, "blob") == 0)
+        blob = true;
+
+    /* let's inherit from the parent's labels */
+    json_object* infoLabelsJ = ts_info_get_field(infoJ, "labels");
+    json_object* labelsJ  = ts_info_labels_to_create_labels(infoLabelsJ);
+
+    json_object * parent_classJ;
+    json_object_object_get_ex(labelsJ, "class", &parent_classJ);
+
+    const char *parent_class = json_object_get_string(parent_classJ);
+    char *class_name = NULL;
+    ret = asprintf(&class_name, "%s|%s", parent_class, name);
+
+    json_object_object_del(labelsJ, "class");
+    json_object_object_add(labelsJ, "class", json_object_new_string(class_name));
+
+    // create the subkey
+    AFB_API_INFO(request->api, "Creating subkey %s (%s)", dstkey, blob?"blob":"scalar");
+
+    ret = _redis_create(request, dstkey, 0, false, labelsJ, blob, &resstr);
+    if (ret != 0) {
+        AFB_API_ERROR(request->api, "subkey %s creation error %s", dstkey, resstr);
+        goto fail;
+    }
+
+    // apply the rule
+    ret = _redis_create_rule(request, key, dstkey, aggregationJ, &resstr);
+    if (ret != 0) {
+        AFB_API_ERROR(request->api, "subkey %s rule creation error %s", dstkey, resstr);
+        goto fail;
+    }
+
+    AFB_API_INFO(request->api, "subkey %s created", dstkey);
+
+    ret = 0;
+
+fail:
+
+    if (infoJ)
+        json_object_put(infoJ);
+
+    free(resstr);
+    free(class_name);
+    free(dstkey);
+
+    return ret;
 }
 
 /*
@@ -2219,9 +2415,9 @@ static void ts_maggregate (afb_req_t request) {
         goto fail;
     }
 
-    err = class_keys_for_each(request, class, _key_aggregate, aggregationJ);
+    err = class_keys_for_each(request, class, _key_aggregate, argsJ);
     if (err) {
-        err = asprintf(&resstr, "failed to apply ag rule on class '%s', aggregation: '%s'", class, json_object_get_string(aggregationJ));
+        err = asprintf(&resstr, "failed to apply rule on class '%s', aggregation: '%s'", class, json_object_get_string(aggregationJ));
         goto fail;
     }
 
@@ -2296,7 +2492,7 @@ fail:
 
 }
 
-static void ts_jdel (afb_req_t request) {
+static void ts_mdel (afb_req_t request) {
 
     json_object* argsJ = afb_req_json(request);
     json_object* replyJ = NULL;
@@ -2350,8 +2546,8 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "queryindex", .callback = redis_queryindex , .info = "get all the keys matching the filter list." },
 
     { .verb = "ts_jinsert", .callback = ts_jinsert, .info = "insert a json object in the database "},
-    { .verb = "ts_jget", .callback = ts_jget, .info = "gets a flattened json object from the database (latest sample) "},
-    { .verb = "ts_jdel", .callback = ts_jdel, .info = "deletes a flattened json object from the database, giving its class name"},    
+    { .verb = "ts_mget", .callback = ts_mget, .info = "gets a flattened json object from the database (latest sample) "},
+    { .verb = "ts_mdel", .callback = ts_mdel, .info = "deletes a flattened json object from the database, giving its class name"},
     { .verb = "ts_minsert", .callback = ts_minsert, .info = "insert replication set in the database "},
     { .verb = "ts_mrange", .callback = ts_mrange, .info = "gets a flattened json object from the database (with time range) "},
     { .verb = "ts_maggregate", .callback = ts_maggregate, .info = "creates a compaction rule for all the keys of the given class"},

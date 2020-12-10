@@ -1,6 +1,8 @@
 # The Replication Challenge
 
-## mrange result from redis (output of redis-cli) ----------
+## Collecting
+
+### mrange result from redis (output of redis-cli) ----------
 
 ```redis-cli
 127.0.0.1:6379> TS.MRANGE  - + FILTER class=sensor2
@@ -39,7 +41,7 @@
 
 ```
 
-## Format for replication
+### Format for replication
 
 For replication, timestamps are set at the beginnig as meta-data
 
@@ -104,3 +106,22 @@ These data can be, with some little work, represented as such for the end user:
   }
 }
 ```
+
+## Resampling
+
+The *ts_maggregate* verb can be used to create a subclass of resampled data.
+
+```bash
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_maggregate '{ "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":50} }'
+```
+
+--> This creates as many subkeys as the ones of the sensor2 class
+These keys names will be suffixed with "|<name>" where <name> is the given aggregation name.
+
+Also, they inherit all the labels of the parent key, (but -not- the class label)
+The class label is named "<parent_label>|<name>"
+
+In this way, a simple "ts_mdel" call with the "<parent_label>|<name>" is enough to delete
+all the subkeys of the aggregation
+
+

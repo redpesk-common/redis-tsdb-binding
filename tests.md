@@ -172,7 +172,7 @@ afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_maggregate '{ "class
 ### Deletion
 
 ``` bash
-afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor1" }'
-afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor2" }'
-afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_jdel '{ "class":"sensor3" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_mdel '{ "class":"sensor1" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_mdel '{ "class":"sensor2" }'
+afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_mdel '{ "class":"sensor3" }'
 ```

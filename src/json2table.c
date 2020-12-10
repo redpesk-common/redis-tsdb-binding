@@ -281,10 +281,15 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
     json_object_object_add(resobj, "data", sampledataJ);
 
     redisReply *elem0 = rep->element[0];
-    redisReply *data0 = elem0->element[2];
-    long long int timestamp = data0->element[0]->integer;
 
-    json_object_object_add(resobj, "ts", json_object_new_int64(timestamp));
+    /* might no have any timestamp yet */
+    if (elem0->elements >=2 ) {
+        redisReply *data0 = elem0->element[2];
+        if (data0->elements != 0) {
+            long long int timestamp = data0->element[0]->integer;
+            json_object_object_add(resobj, "ts", json_object_new_int64(timestamp));
+        }
+    }
 
     for (int ix = 0; ix < rep->elements; ix++)
     {
@@ -294,6 +299,7 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
             continue;
 
         char *name = elem->element[0]->str;
+
         redisReply *sample = elem->element[2];
 
         if (sample->elements != 2) {
