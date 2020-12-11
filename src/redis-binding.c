@@ -17,6 +17,9 @@
 #include "redis-systemd.h"
 
 #define INSUFFICIENT_MEMORY "Insufficient memory"
+#define API_REPLY_SUCCESS "success"
+#define API_REPLY_FAILURE "failed"
+
 
 // #define DEBUG
 
@@ -2525,6 +2528,22 @@ done:
 
 }
 
+extern const char * info_verbS;
+
+static void infoVerb (afb_req_t request) {
+
+	enum json_tokener_error jerr;
+
+	json_object * infoArgsJ = json_tokener_parse_verbose(info_verbS, &jerr);
+	if (jerr != json_tokener_success) {
+        afb_req_fail_f(request, API_REPLY_FAILURE, "failure while packing info() verb arguments (error: %d)!", jerr);
+        return;
+    }
+    afb_req_success(request, infoArgsJ, NULL);
+    return;
+
+}
+
 static afb_verb_t CtrlApiVerbs[] = {
     /* VERB'S NAME         FUNCTION TO CALL         SHORT DESCRIPTION */
     { .verb = "ping",     .callback = ctrlapi_ping     , .info = "ping test for API"},
@@ -2542,7 +2561,7 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "mrevrange", .callback = redis_mrevrange , .info = "query a timestamp range across multiple time-series by filters (reverse)" },
     { .verb = "get", .callback = redis_get , .info = "get the last sample TS" },
     { .verb = "mget", .callback = redis_mget , .info = "get the last samples matching the specific filter." },
-    { .verb = "info", .callback = redis_info , .info = "returns information and statistics on the time-series." },
+    { .verb = "redis_info", .callback = redis_info , .info = "returns information and statistics on the time-series." },
     { .verb = "queryindex", .callback = redis_queryindex , .info = "get all the keys matching the filter list." },
 
     { .verb = "ts_jinsert", .callback = ts_jinsert, .info = "insert a json object in the database "},
@@ -2551,6 +2570,8 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "ts_minsert", .callback = ts_minsert, .info = "insert replication set in the database "},
     { .verb = "ts_mrange", .callback = ts_mrange, .info = "gets a flattened json object from the database (with time range) "},
     { .verb = "ts_maggregate", .callback = ts_maggregate, .info = "creates a compaction rule for all the keys of the given class"},
+
+    { .verb = "info", .callback = infoVerb, .info = "API info"},
 
     { .verb = NULL} /* marker for end of the array */
 };

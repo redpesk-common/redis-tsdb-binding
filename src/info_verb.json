@@ -1,0 +1,39 @@
+{
+    "metadata": {
+        "uid": "tsbd",
+        "info": "Time Series Database Binding",
+        "version": "1.0"
+    },
+    "groups": [
+        {
+            "uid": "highlevel",
+            "info": "High Level API",
+            "verbs": [
+                {
+                    "uid": "ping",
+                    "info": "sends ping",
+                    "verb": "ping"
+                },
+                {
+                    "uid": "ts_jinsert",
+                    "info": "Inserts a json object into the database",
+                    "verb": "ts_jinsert",
+                    "usage": {
+                        "data": "parameter"
+                    },
+                    "sample": [
+                        {
+                            "class":"sensor1", "data": { "temperature": 25.2, "table": [ 1, 2, 3 ] }
+                        },
+                        {
+                            "class":"sensor2", "data": [ "cool" , "groovy", 6 , 23.5 ]
+                        },
+                        {
+                            "class":"sensor3", "data": { "table": [ {"s": 12} , {"v": 21} ] }
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
