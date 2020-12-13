@@ -28,6 +28,7 @@ set(PROJECT_AUTHOR "Thierry Bultel")
 set(PROJECT_AUTHOR_MAIL "thierry.bultel@iot.bzh")
 set(PROJECT_LICENSE "APL2.0")
 set(PROJECT_LANGUAGES "CXX")
+set(API_NAME "redis")
 
 # Where are stored the project configuration files
 # relative to the root project directory
