@@ -175,7 +175,7 @@ set(WIDGET_TYPE application/vnd.agl.service)
 # This is the file that will be executed, loaded,
 # at launch time by the application framework.
 #
-set(WIDGET_ENTRY_POINT lib/afb-signal-composer.so)
+set(WIDGET_ENTRY_POINT lib/redis-binding.so)
 
 # Optional dependencies order
 # ---------------------------
