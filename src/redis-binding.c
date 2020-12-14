@@ -319,26 +319,41 @@ fail:
 
 static redisReply * get_class_keys(afb_req_t request, const char * class);
 
-typedef int (*key_func) (afb_req_t request, const char * key, json_object * param);
-
-static int class_keys_for_each(afb_req_t request, const char* class, key_func func, json_object * param) {
-    int ret = -1;
+/* returns the number of keys in a given class */
+static uint32_t get_nb_keys(afb_req_t request, const char * class) {
     redisReply * keys = get_class_keys(request, class);
     if (keys == NULL)
-        goto fail;
+        return 0;
+    return (uint32_t) keys->elements;
+}
+
+
+/* iterates on all the keys of the given class. 
+    return -1 if an error occured, or the number of keys if success
+ */
+
+typedef int (*key_func) (afb_req_t request, const char * key, json_object * param);
+static int class_keys_for_each(afb_req_t request, const char* class, key_func func, json_object * param) {
+    int ret = 0;
+    redisReply * keys = get_class_keys(request, class);
+    if (keys == NULL)
+        goto done;
+    
+    AFB_API_DEBUG(request->api, "work on %zu keys of class %s", keys->elements, class);
 
     for (int ix = 0; ix < keys->elements; ix++) {
         redisReply * elem = keys->element[ix];
         char * key = elem->str;
 
-        ret = func(request, key, param);
-        if (ret != 0) {
-            goto fail;
+        ret++;
+
+        int _ret = func(request, key, param);
+        if (_ret == -1) {
+            return -1;
         }
     }
 
-    ret = 0;
-fail:
+done:
     return ret;
 }
 
@@ -2311,8 +2326,9 @@ static int _key_aggregate(afb_req_t request, const char * key, json_object * arg
     int ret = -1;
     char * class;
     char * name;
-    json_object * aggregationJ;
-    json_object * infoJ;
+    json_object* aggregationJ = NULL;
+    json_object* infoJ = NULL;
+    json_object* labelsJ = NULL;
 
     char * dstkey;
     char * resstr = NULL;
@@ -2349,7 +2365,10 @@ static int _key_aggregate(afb_req_t request, const char * key, json_object * arg
 
     /* let's inherit from the parent's labels */
     json_object* infoLabelsJ = ts_info_get_field(infoJ, "labels");
-    json_object* labelsJ  = ts_info_labels_to_create_labels(infoLabelsJ);
+    labelsJ  = ts_info_labels_to_create_labels(infoLabelsJ);
+
+    if (!labelsJ)
+        goto fail;
 
     json_object * parent_classJ;
     json_object_object_get_ex(labelsJ, "class", &parent_classJ);
@@ -2386,6 +2405,9 @@ fail:
     if (infoJ)
         json_object_put(infoJ);
 
+    if (labelsJ)
+        json_object_put(labelsJ);
+
     free(resstr);
     free(class_name);
     free(dstkey);
@@ -2407,6 +2429,9 @@ static void ts_maggregate (afb_req_t request) {
     json_object* aggregationJ;
     char * class;
     char * name;
+    char * agg_classname = NULL;
+    int ret;
+    int nb;
 
     int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:o!}",
         "class", &class,
@@ -2418,11 +2443,28 @@ static void ts_maggregate (afb_req_t request) {
         goto fail;
     }
 
-    err = class_keys_for_each(request, class, _key_aggregate, argsJ);
-    if (err) {
+    if (get_nb_keys(request, class) == 0) {
+        err = asprintf(&resstr, "no keys of class '%s'", class);
+        goto fail;
+    }
+
+    ret = asprintf(&agg_classname, "%s|%s", class, name);
+    if (ret == -1)
+        goto fail;
+
+    nb=get_nb_keys(request, agg_classname);
+    if (nb != 0) {
+        err = asprintf(&resstr, "class aggregation '%s' already exists and has %d keys", agg_classname, nb);
+        goto fail;
+    }
+
+    ret = class_keys_for_each(request, class, _key_aggregate, argsJ);
+    if (ret == -1) {
         err = asprintf(&resstr, "failed to apply rule on class '%s', aggregation: '%s'", class, json_object_get_string(aggregationJ));
         goto fail;
     }
+
+    err = asprintf(&resstr, "Aggregated %d keys", ret);
 
     afb_req_success(request, replyJ, resstr);
     goto done;
@@ -2430,6 +2472,8 @@ static void ts_maggregate (afb_req_t request) {
 fail:
     afb_req_fail(request, "error", resstr);
 done:
+    free(agg_classname);
+    free(resstr);
     return;
 
 }
@@ -2502,6 +2546,7 @@ static void ts_mdel (afb_req_t request) {
 
     char * class = NULL;
     char * resstr = NULL;
+    int ret;
 
     int err = wrap_json_unpack(argsJ, "{s:s !}",
         "class", &class );
@@ -2510,11 +2555,13 @@ static void ts_mdel (afb_req_t request) {
         goto fail;
     }
 
-    err = class_keys_for_each(request, class, _key_del, NULL);
-    if (err) {
+    ret = class_keys_for_each(request, class, _key_del, NULL);
+    if (ret == -1) {
         err = asprintf(&resstr, "failed to delete keys of class '%s'", class);
         goto fail;
     }
+
+    err = asprintf(&resstr, "Deleted %d keys", ret);
 
     afb_req_success(request, replyJ, resstr);
     goto done;
