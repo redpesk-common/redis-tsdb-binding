@@ -2676,7 +2676,7 @@ int afbBindingEntry(afb_api_t apiHandle) {
     if (!dirList) dirList=CONTROL_CONFIG_PATH;
 
     // Select correct config file
-    char *configPath = CtlConfigSearch(apiHandle, dirList, "redis-binding");
+    char *configPath = CtlConfigSearch(apiHandle, dirList, NULL);
 
     if (!configPath) {
         AFB_API_ERROR(apiHandle, "CtlConfigSearch: No redis-%s-* config found in %s ", GetBinderName(), dirList);
