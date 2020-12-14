@@ -9,7 +9,12 @@ WD="$REPO_ROOT/iotbzh/rp-service-hiredis/build"
 
 $REDIS_SERVER $REDIS_CONFIG &
 
-afb-binder --name redis_binding --port=1236 --workdir=$WD \
+if [[ "$1" == "debug" ]]; then
+    EXTRA="gdb --args"
+    #export AFB_DEBUG_BREAK=main-entry
+fi
+
+$EXTRA afb-binder --name redis_binding --port=1236 --workdir=$WD \
 --binding=package/lib/redis-binding.so \
 --roothttp=package/htdocs --tracereq=common -vvv \
 --monitor \
