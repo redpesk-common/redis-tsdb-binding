@@ -14,7 +14,7 @@ afb-client -H ws://localhost:1234/api?token=1 redis create '{ "key":"temperature
 
 ``` bash
 afb-client -H ws://localhost:1234/api?token=1 redis del '{ "key":"temperature" }'
-afb-client -H ws://localhost:1234/api?token=1 redis del '{ "key":["temperature"; "temperature2"] }'
+afb-client -H ws://localhost:1234/api?token=1 redis del '{ "key":["temperature", "temperature2"] }'
 ```
 
 * add
@@ -89,7 +89,7 @@ afb-client -H ws://localhost:1234/api?token=1 redis mget '{ "filter": [ "sens=3"
 
 ``` bash
 afb-client -H ws://localhost:1234/api?token=1 redis info '{ "key":"temperature" }'
-afb-client -H ws://localhost:1234/api?token=1 redis queryindex '{ "filter": [ "sens"=3 ] }'
+afb-client -H ws://localhost:1234/api?token=1 redis queryindex '{ "filter": [ "sens=3" ] }'
 ```
 
 ## High Level verbs (from json to redis and vice-versa )
@@ -113,9 +113,9 @@ afb-client -H ws://localhost:1234/api?token=1 redis ts_jinsert '{ "class":"senso
 ### Queries
 
 ``` bash
-afb-client -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor1" }'
-afb-client -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor2" }'
-afb-client -H ws://localhost:1234/api?token=1 redis ts_jget '{ "class":"sensor3" }'
+afb-client -H ws://localhost:1234/api?token=1 redis ts_mget '{ "class":"sensor1" }'
+afb-client -H ws://localhost:1234/api?token=1 redis ts_mget '{ "class":"sensor2" }'
+afb-client -H ws://localhost:1234/api?token=1 redis ts_mget '{ "class":"sensor3" }'
 ```
 
 expected output format:

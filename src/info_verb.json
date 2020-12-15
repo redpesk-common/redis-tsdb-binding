@@ -19,7 +19,7 @@
                     "info": "Inserts a json object into the database",
                     "verb": "ts_jinsert",
                     "usage": {
-                        "data": "parameter"
+                        "data": "parameters... (see the sample examples)"
                     },
                     "sample": [
                         {
@@ -31,6 +31,270 @@
                         {
                             "class":"sensor3", "data": { "table": [ {"s": 12} , {"v": 21} ] }
                         }
+                    ]
+                },
+                {
+                    "uid":"ts_mget",
+                    "info":"gets the latest sample of all the data of the given class",
+                    "verb":"ts_mget",
+                    "usage": {
+                        "class":"sensor class" 
+                    },
+                    "sample": [
+                        { "class":"sensor1" },
+                        { "class":"sensor2" },
+                        { "class":"sensor3" }
+                    ]
+                },
+                {
+                    "uid":"ts_mrange",
+                    "info":"gets all the sample of all the data of the given class",
+                    "verb":"ts_mrange",
+                    "usage": {
+                        "class":"sensor class", "fromts":"12345", "tots":"6546"
+                    },
+                    "sample": [
+                        { "class":"sensor2", "fromts":"12345", "tots":"6546" },
+                        { "class":"sensor2", "fromts":"-", "tots":"+" }
+                    ]
+                },
+                {
+                    "uid":"ts_minsert",
+                    "info":"Replication: uses the output of ts_mrange to push data to another database",
+                    "usage": {
+                        "class":"sensor2",
+                        "ts": [ 1606743420408, 1606743426621, 1606743429893], 
+                        "data": [ 
+                            [ "sensor2[0]", [  "cool", "cool", "cool" ] ], 
+                            [ "sensor2[1]", [ "groovy", "groovy", "groovy" ] ], 
+                            [ "sensor2[2]", [ 6, 6, 6 ] ], 
+                            [ "sensor2[3]", [ 23.3, 23.6, 23.7 ]  ] 
+                        ]
+                    },
+                    "sample": [ {
+                        "class":"sensor2",
+                        "ts": [1606743420408, 1606743426621, 1606743429893], 
+                        "data": [ 
+                            [ "sensor2[0]", [  "cool", "cool", "cool" ] ], 
+                            [ "sensor2[1]", [ "groovy", "groovy", "groovy" ] ], 
+                            [ "sensor2[2]", [ 6, 6, 6 ] ], 
+                            [ "sensor2[3]", [ 23.3, 23.6, 23.7 ]  ] 
+                        ]  
+                    }
+                    ]
+                },
+                {
+                    "uid":"ts_maggregate",
+                    "info":"Compaction rules on composite objects",
+                    "verb": "ts_maggregate",
+                    "usage": {
+                        "class":"sensor class", "name":"aggregation name", "aggregation": {"type": "aggregation type", "bucket":500} 
+                    },
+                    "sample": [
+                        { "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":500} }
+                    ]
+                },
+                {
+                    "uid":"ts_mdel",
+                    "info":"Multiple deletion: deletes all the keys of the given class",
+                    "verb":"ts_mdel",
+                    "usage": {
+                        "class":"sensor class"
+                    },
+                    "sample": [
+                        { "class":"sensor1" },
+                        { "class":"sensor2" },
+                        { "class":"sensor3" }
+                    ]
+                }
+            ]
+        },
+        {
+            "uid": "lowlevel",
+            "info": "Low Level API, wraps all commands at https://oss.redislabs.com/redistimeseries/commands",
+            "verbs": [ 
+                {
+                    "uid": "create",
+                    "info": "Create a new time-series ",
+                    "verb": "create",
+                    "usage": {
+                        "key":"key name", "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" }, "blob":false
+                    },
+                    "sample": [
+                        { "key":"temperature", "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" }, "blob":false }
+                    ]
+                },
+                {
+                    "uid": "del",
+                    "info": "Delete a time-series ",
+                    "verb": "del",
+                    "usage": {
+                        "key":"key name"
+                    },
+                    "sample": [
+                        { "key":"temperature" },
+                        { "key":["temperature", "temperature2"] }
+                    ]
+                },
+                {
+                    "uid": "add",
+                    "info": "Append (or create and append) a new sample to the series",
+                    "verb": "add",
+                    "usage": {
+                        "key":"key name", "timestamp":"1548149191", "value":42 , "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" }
+                    },
+                    "sample": [
+                        { "key":"temperature", "timestamp":"*", "value":42 , "retention":3000, "uncompressed":true, "labels": { "sens":"3", "asa":"44" } }
+                    ]
+                },
+                {
+                    "uid":"range",
+                    "info":"Query a range in forward or reverse directions.",
+                    "verb":"range",
+                    "usage": {
+                        "key":"key name", "fromts":"from time", "tots":"to time"
+                    },
+                    "sample": [
+                        { "key":"temperature", "fromts":"1548149191", "tots":"1548149200" },
+                        { "key":"temperature","fromts":"-","tots":"+"}
+                    ]
+
+                },
+                {
+                    "uid":"alter",
+                    "info":"Update the retention, labels of an existing key. The parameters are the same as 'create'",
+                    "verb":"alter",
+                    "usage": {
+                        "key":"key name", "retention":3000,  "labels": { "sens":"3", "asa":"45" } 
+                    },
+                    "sample": [
+                        { "key":"temperature", "retention":3000,  "labels": { "sens":"3", "asa":"45" } }
+                    ]
+                },
+                {
+                    "uid":"madd",
+                    "info":"Append new samples to a list of series",
+                    "verb":"madd",
+                    "usage": {
+                        "key":"key name", "timestamp":"15481491091" , "value":32
+                    },
+                    "sample": [
+                        [{ "key":"temperature", "timestamp":"15481491091" , "value":32 }],
+                        [{ "key":"temperature", "timestamp":"*" , "value":32 }, { "key":"temperature1", "timestamp":"*" , "value":29 }]
+                    ]
+                },
+                {
+                    "uid":"incrby",
+                    "info":"Creates a new sample that increments the latest sample's value",
+                    "usage":{
+                        "key":"key name", "value":1, "timestamp":"*"
+                    },
+                    "sample":[
+                        { "key":"temperature", "value":2 , "timestamp":"*", "retention":2000 },
+                        { "key":"temperature", "value":2.2, "timestamp":"*", "uncompressed":true }
+                    ]
+                },
+                {
+                    "uid":"decrby",
+                    "info":"Creates a new sample that decrements the latest sample's value",
+                    "usage": {
+                        "key":"key name", "value":1, "timestamp":"*"
+                    },
+                    "sample": [
+                        { "key":"temperature", "value":2 , "timestamp":"*", "retention":2000 },
+                        { "key":"temperature", "value":2.2, "timestamp":"*", "uncompressed":true }
+                    ]
+                },
+                {
+                    "uid":"create_rule",
+                    "info":"Create a compaction rule",
+                    "verb":"create_rule",
+                    "usage": {
+                        "sourceKey":"source key name", "destKey":"destination key name", "aggregation": {"type": "avg", "bucket":500}
+                    },
+                    "sample": [
+                        { "sourceKey":"temperature", "destKey":"temp1", "aggregation": {"type": "avg", "bucket":500} }
+                    ]
+                },
+                {
+                    "uid":"delete_rule",
+                    "info":"Deletes a compaction rule",
+                    "verb":"delete_rule",
+                    "usage": {
+                        "sourceKey":"source key name", "destKey":"destination key name"
+                    },
+                    "sample": [
+                        { "sourceKey":"temperature", "destKey":"temp1"}
+                    ]
+                },
+                {
+                    "uid":"mrange",
+                    "info":"Query a range in forward direction",
+                    "verb":"mrange",
+                    "usage": {
+                        "fromts":"from time", "tots":"to time" , "filter": [ "filter1" ]
+                    },
+                    "sample":[
+                        { "fromts":"-", "tots":"+" , "filter": [ "sens=3" ] },
+                        { "fromts":"-", "tots":"+" , "filter": [ "sens=3" ], "count":3 },
+                        { "fromts":"1548149191", "tots":"1548149200", "withlabels":true, "filter": [ "sens=3" ] }  
+                    ]
+                },
+                {
+                    "uid":"mrevrange",
+                    "info":"Query a range in reverse direction",
+                    "verb":"mrevrange",
+                    "usage": {
+                        "fromts":"from time", "tots":"to time" , "filter": [ "filter1" ]
+                    },
+                    "sample":[
+                        { "fromts":"-", "tots":"+" , "filter": [ "sens=3" ] },
+                        { "fromts":"-", "tots":"+" , "filter": [ "sens=3" ], "count":3 },
+                        { "fromts":"1548149191", "tots":"1548149200", "withlabels":true, "filter": [ "sens=3" ] }  
+                    ]
+                },
+                {
+                    "uid":"get",
+                    "info":"Get the last sample",
+                    "verb":"get",
+                    "usage": {
+                        "key":"key name"
+                    },
+                    "sample": [
+                        { "key":"temp1" }
+                    ]
+                },
+                {
+                    "uid":"mget",
+                    "info":"Get the last samples matching the specific filter.",
+                    "verb":"mget",
+                    "usage": {
+                        "filter": [ "filter1" ]
+                    },
+                    "sample": [
+                        { "filter": [ "sens=3" ] }
+                    ]
+                },
+                {
+                    "uid":"info",
+                    "info":"Gets information about a key",
+                    "verb":"info",
+                    "usage": {
+                        "key":"key name"
+                    },
+                    "sample" : [
+                        { "key":"temperature" }
+                    ]
+                },
+                {
+                    "uid":"queryindex",
+                    "info":"Get all the keys matching the filter list",
+                    "verb":"queryindex",
+                    "usage": {
+                        "filter": [ "filter1" ]
+                    },
+                    "sample": [
+                        { "filter": [ "sens=3" ] }
                     ]
                 }
             ]

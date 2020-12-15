@@ -611,7 +611,7 @@ static void redis_create (afb_req_t request) {
 
     AFB_API_DEBUG (request->api, "%s: %s", __func__, json_object_get_string(argsJ));
 
-    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?b,s?o,si !}",
+    int err = wrap_json_unpack(argsJ, "{ss,s?i,s?b,s?o,sb !}",
         "key", &rkey,
         "retention", &retention,
         "uncompressed", &uncompressed,
@@ -1817,7 +1817,7 @@ static void ts_jinsert (afb_req_t request) {
     if (timestampS == NULL) {
         err = asprintf(&_timestampS , "%ld", time(NULL));
         if (err == -1) {
-            fprintf(stderr, "%s ts error\n", __func__);
+            resstr = strdup("ts format error");
             goto fail;
         }
     }
@@ -2582,7 +2582,7 @@ static void infoVerb (afb_req_t request) {
 	enum json_tokener_error jerr;
 
 	json_object * infoArgsJ = json_tokener_parse_verbose(info_verbS, &jerr);
-	if (jerr != json_tokener_success) {
+	if (infoArgsJ == NULL || jerr != json_tokener_success) {
         afb_req_fail_f(request, API_REPLY_FAILURE, "failure while packing info() verb arguments (error: %d)!", jerr);
         return;
     }
