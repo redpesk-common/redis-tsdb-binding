@@ -1,0 +1,19 @@
+type: books
+books:
+-
+    id: redis-tsdb-binding-doc
+    title: Redis binding
+    description:
+    keywords:
+    author: "IotBzh"
+    chapters:
+    - url: 1-Architecture.md
+      name: Architecture presentation
+    - url: 2-Installation.md
+      name: Installation Guide
+    - url: 3-Configuration.md
+      name: Configuration
+    - url: 4-Usage.md
+      name: Usage Guide
+    - url: 5-Replication.md
+      name: Details about the high-level replication API

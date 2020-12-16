@@ -1,5 +1,22 @@
 # The Replication Challenge
 
+The API verbs described here are aimed to perform data replication from Edge to Cloud
+In general, not all the Edge data are meant to be copied to the Cloud server,
+data will likely to be resampled, of in some cases, only some statistics (average ...)
+are of interest.
+
+In order to to so, the Redpesk redis binding leverages the capabilities of the RedisTimeSeries plugin,
+that can perform resampling (aka 'aggregation rules') in the mosr possible efficient way.
+
+This is that the *ts_maggregate* verb is made for, it creates an aggregation class to an alreay
+existing class in a single call.
+
+The *ts_mrange* verb gets all the data samples belonging to the given class, an its
+output format is directly compatible with the *ts_minsert* verb, that pushes the collected
+data to the Cloud server.
+
+The sections below tell a little about the design choices that have been made.
+
 ## Collecting
 
 ### mrange result from redis (output of redis-cli) ----------
@@ -123,5 +140,4 @@ The class label is named "<parent_label>|<name>"
 
 In this way, a simple "ts_mdel" call with the "<parent_label>|<name>" is enough to delete
 all the subkeys of the aggregation
-
 
