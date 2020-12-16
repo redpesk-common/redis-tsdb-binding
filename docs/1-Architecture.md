@@ -1,4 +1,4 @@
-# redpesk® Redid Binding
+(??)
 
 ## 1. Introduction
 
@@ -10,7 +10,7 @@ In addition, it provides high level API verbs, that can handle sets (aka classes
 
 ## 2. Architecture
 
-The Redpesk redis binding relies on the hiredis (https://github.com/redis/hiredis) library, which is C frontend to
+The Redpesk redis binding relies on the [hiredis library] (https://github.com/redis/hiredis) library, which is C frontend to
 a redis server.
 
 ## 3. Json flattening, and Blobs

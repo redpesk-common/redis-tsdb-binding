@@ -1,4 +1,4 @@
-# redpesk® cloud publication binding
+# redpesk® redis binding
 
 This part is only useful if you plan to build and install the package from source.  
 

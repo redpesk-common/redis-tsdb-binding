@@ -2593,6 +2593,7 @@ static void infoVerb (afb_req_t request) {
 
 static afb_verb_t CtrlApiVerbs[] = {
     /* VERB'S NAME         FUNCTION TO CALL         SHORT DESCRIPTION */
+    /* Low level */
     { .verb = "ping",     .callback = ctrlapi_ping     , .info = "ping test for API"},
     { .verb = "create", .callback = redis_create , .info = "create a timed value in TS" },
     { .verb = "del", .callback = redis_del , .info = "Remove the specified keys" },
@@ -2611,9 +2612,12 @@ static afb_verb_t CtrlApiVerbs[] = {
     { .verb = "redis_info", .callback = redis_info , .info = "returns information and statistics on the time-series." },
     { .verb = "queryindex", .callback = redis_queryindex , .info = "get all the keys matching the filter list." },
 
+    /* High level */
     { .verb = "ts_jinsert", .callback = ts_jinsert, .info = "insert a json object in the database "},
     { .verb = "ts_mget", .callback = ts_mget, .info = "gets a flattened json object from the database (latest sample) "},
     { .verb = "ts_mdel", .callback = ts_mdel, .info = "deletes a flattened json object from the database, giving its class name"},
+
+    /* Replication & resampling */
     { .verb = "ts_minsert", .callback = ts_minsert, .info = "insert replication set in the database "},
     { .verb = "ts_mrange", .callback = ts_mrange, .info = "gets a flattened json object from the database (with time range) "},
     { .verb = "ts_maggregate", .callback = ts_maggregate, .info = "creates a compaction rule for all the keys of the given class"},
