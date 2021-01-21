@@ -13,7 +13,7 @@ Then, to install the package and all its dependencies, install the package **red
 
 ## 2. Building from source
 
-We advise you to use the [local builder](../../getting_started/local_builder/docs/1_installation.html) for building the binding sources. The local builder comes with everything setup to build redpesk® projects.
+We advise you to use the [local builder]({% chapter_link local-builder-doc.installation %}) for building the binding sources. The local builder comes with everything setup to build redpesk® projects.
 
 ### a. Tools
 

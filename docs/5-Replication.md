@@ -140,4 +140,3 @@ The class label is named "<parent_label>|<name>"
 
 In this way, a simple "ts_mdel" call with the "<parent_label>|<name>" is enough to delete
 all the subkeys of the aggregation
-
