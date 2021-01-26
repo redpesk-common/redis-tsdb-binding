@@ -33,12 +33,12 @@ Install the dependencies:
 
 Fedora/OpenSuse:
 ```bash
-dnf install gcc-c++ make cmake afb-cmake-modules json-c-devel afb-binding-devel afb-libhelpers-devel afb-libcontroller-devel libhiredis-devel
+dnf install gcc-c++ make cmake afb-cmake-modules json-c-devel afb-binding-devel afb-libhelpers-devel afb-libcontroller-devel libhiredis-devel lua-devel
 ```
 
 Ubuntu:
 ```bash
-apt install gcc g++ make cmake afb-cmake-modules-bin libsystemd-dev libjson-c-dev afb-binding-dev afb-libhelpers-dev afb-libcontroller-dev libhiredis-dev
+apt install gcc g++ make cmake afb-cmake-modules-bin libsystemd-dev libjson-c-dev afb-binding-dev afb-libhelpers-dev afb-libcontroller-dev libhiredis-dev liblua5.3-dev
 ```
 
 ### b. Build
