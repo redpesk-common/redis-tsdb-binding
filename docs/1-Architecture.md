@@ -1,8 +1,8 @@
-# redpesk® redis binding
+# redpesk redis binding
 
 ## 1. Introduction
 
-The redis binding is a Redpesk API to access to a redis server, that has the RedisTimeSeries plugin enabled.
+The redis binding is a redpesk API to access to a redis server, that has the RedisTimeSeries plugin enabled.
 It provides all the standard calls of the RedisTimeSeries API (https://oss.redislabs.com/redistimeseries/commands), 
 those calls are parts of the so-called low-level API.
 
@@ -10,7 +10,7 @@ In addition, it provides high level API verbs, that can handle sets (aka classes
 
 ## 2. Architecture
 
-The Redpesk redis binding relies on the [hiredis library](https://github.com/redis/hiredis) library, which is C frontend to
+The redpesk redis binding relies on the [hiredis library](https://github.com/redis/hiredis) library, which is C frontend to
 a redis server.
 
 ## 3. Json flattening, and Blobs

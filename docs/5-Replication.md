@@ -5,7 +5,7 @@ In general, not all the Edge data are meant to be copied to the Cloud server,
 data will likely to be resampled, of in some cases, only some statistics (average ...)
 are of interest.
 
-In order to do so, the Redpesk redis binding leverages the capabilities of the RedisTimeSeries plugin,
+In order to do so, the redpesk redis binding leverages the capabilities of the RedisTimeSeries plugin,
 that can perform resampling (aka 'aggregation rules') in the most possible efficient way.
 
 This is that the *ts_maggregate* verb is made for, it creates an aggregation class to an alreay
