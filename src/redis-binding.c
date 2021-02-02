@@ -2659,9 +2659,6 @@ static int CtrlLoadOneApi (void *cbdata, afb_api_t apiHandle) {
     // load section for corresponding API
     error= CtlLoadSections(apiHandle, ctrlConfig, ctrlSections);
 
-    // declare an event event manager for this API;
-    afb_api_on_event(apiHandle, CtrlDispatchApiEvent);
-
     // should not seal API as each mixer+stream create a new verb
     // afb_dynapi_seal(apiHandle);
     return error;
