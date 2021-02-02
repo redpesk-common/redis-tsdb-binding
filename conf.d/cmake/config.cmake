@@ -1,7 +1,8 @@
 ###########################################################################
-# Copyright 2015, 2016, 2017 IoT.bzh
+# Copyright 2015, 2016, 2017, 2021 IoT.bzh
 #
-# author: Fulup Ar Foll <fulup@iot.bzh>
+# author: Thierry Bultel <thierry.bultel@iot.bzh>
+#         Fulup Ar Foll <fulup@iot.bzh>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,11 +19,11 @@
 
 # Project Info
 # ------------------
-set(PROJECT_NAME redis-test-binding)
+set(PROJECT_NAME redis-tsdb-binding)
 set(PROJECT_VERSION 1.0)
-set(PROJECT_PRETTY_NAME "Agl Test Binding of Redis Plugin")
-set(PROJECT_DESCRIPTION "Test Binding of the redis plugin: Redis Time Series database")
-set(PROJECT_URL "git@git.ovh.iot:tbultel/agl-redis-test-binding.git")
+set(PROJECT_PRETTY_NAME "Timeseries DB Binding of the Redis Plugin")
+set(PROJECT_DESCRIPTION "Binding of the redis plugin: Redis Time Series database")
+set(PROJECT_URL "https://github.com/redpesk-common/redis-tsdb-binding")
 set(PROJECT_ICON "icon.png")
 set(PROJECT_AUTHOR "Thierry Bultel")
 set(PROJECT_AUTHOR_MAIL "thierry.bultel@iot.bzh")
