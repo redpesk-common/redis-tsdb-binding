@@ -13,6 +13,9 @@ In addition, it provides high level API verbs, that can handle sets (aka classes
 The redpesk redis binding relies on the [hiredis library](https://github.com/redis/hiredis) library, which is C frontend to
 a redis server.
 
+![Architecture](assets/architecture.png)
+
+
 ## 3. Json flattening, and Blobs
 
 All the high-level verbs of the redis binding take json data as a parameter
