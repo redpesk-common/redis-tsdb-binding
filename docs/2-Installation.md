@@ -44,7 +44,7 @@ apt install gcc g++ make cmake afb-cmake-modules-bin libsystemd-dev libjson-c-de
 ### b. Build
 
 ```bash
-git clone https://github.com/redpesk/redpesk-common/redis-tsdb-binding.git
+git clone https://github.com/redpesk-common/redis-tsdb-binding.git
 cd redis-tsdb-binding
 mkdir build
 cd build
