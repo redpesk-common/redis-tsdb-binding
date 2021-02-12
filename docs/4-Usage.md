@@ -1,6 +1,6 @@
-# redpesk® redis binding usage
+# redpesk redis binding usage
 
-When used as a Redpesk RPM package, the service autostarts and is ready to reply to requests from other bindings
+When used as a redpesk RPM package, the service autostarts and is ready to reply to requests from other bindings
 
 When built from source, this is a typical command line to launch it:
 

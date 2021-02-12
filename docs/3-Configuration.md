@@ -1,4 +1,4 @@
-# redpesk® redis binding configuration
+# redpesk redis binding configuration
 
 You can find below the configuration obtained after compiling the redis binding and a brief descritpion of several concept introduced.
 

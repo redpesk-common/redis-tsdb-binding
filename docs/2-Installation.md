@@ -1,19 +1,19 @@
-# redpesk® redis binding
+# redpesk redis binding
 
 This part is only useful if you plan to build and install the package from source.  
 
 
 ## 1. Using a distribution package manager
 
-If you aren't planing to build it from source, add the redpesk® repository
+If you aren't planing to build it from source, add the redpesk repository
 to your package manager.  
-Here is the url for Redpesk and Fedora:
+Here is the url for redpesk and Fedora:
 `download.redpesk.bzh`  
 Then, to install the package and all its dependencies, install the package **redis-tsdb-binding**
 
 ## 2. Building from source
 
-We advise you to use the [local builder]({% chapter_link local-builder-doc.installation %}) for building the binding sources. The local builder comes with everything setup to build redpesk® projects.
+We advise you to use the [local builder]({% chapter_link local-builder-doc.installation %}) for building the binding sources. The local builder comes with everything setup to build redpesk projects.
 
 ### a. Tools
 
@@ -44,7 +44,7 @@ apt install gcc g++ make cmake afb-cmake-modules-bin libsystemd-dev libjson-c-de
 ### b. Build
 
 ```bash
-git clone https://github.com/redpesk/redpesk-common/redis-tsdb-binding.git
+git clone https://github.com/redpesk-common/redis-tsdb-binding.git
 cd redis-tsdb-binding
 mkdir build
 cd build

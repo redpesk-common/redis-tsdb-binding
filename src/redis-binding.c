@@ -2112,7 +2112,7 @@ Expected input: a timestamps array, and an array of samples
 static void ts_minsert (afb_req_t request) {
     char ** tsArray = NULL;
     json_object* argsJ = afb_req_json(request);
-    char * resstr;
+    char * resstr = NULL;
     char * class;
     uint32_t nbts = 0;
 
@@ -2195,7 +2195,7 @@ static void ts_minsert (afb_req_t request) {
             
             char ** argv = NULL;
             size_t * argvlen = NULL;
-            char * resstr = NULL;
+            resstr = NULL;
             int ret;
 
             int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestamp, 1 for value */
@@ -2658,9 +2658,6 @@ static int CtrlLoadOneApi (void *cbdata, afb_api_t apiHandle) {
 
     // load section for corresponding API
     error= CtlLoadSections(apiHandle, ctrlConfig, ctrlSections);
-
-    // declare an event event manager for this API;
-    afb_api_on_event(apiHandle, CtrlDispatchApiEvent);
 
     // should not seal API as each mixer+stream create a new verb
     // afb_dynapi_seal(apiHandle);
