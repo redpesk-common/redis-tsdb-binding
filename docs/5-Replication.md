@@ -129,7 +129,7 @@ These data can be, with some little work, represented as such for the end user:
 The *ts_maggregate* verb can be used to create a subclass of resampled data.
 
 ```bash
-afb-client-demo -H ws://localhost:1234/api?token=1 redis ts_maggregate '{ "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":50} }'
+afb-client -H ws://localhost:1234/api?token=1 redis ts_maggregate '{ "class":"sensor2", "name":"avg", "aggregation": {"type": "avg", "bucket":50} }'
 ```
 
 --> This creates as many subkeys as the ones of the sensor2 class
