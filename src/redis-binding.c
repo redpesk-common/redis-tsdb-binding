@@ -1879,6 +1879,7 @@ static void ts_mget (afb_req_t request) {
     int ret = -EINVAL;
     char ** argv = NULL;
     size_t * argvlen = NULL;
+    char * filter = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s !}",
         "class", &class );
@@ -1890,7 +1891,6 @@ static void ts_mget (afb_req_t request) {
     /* retrieves keys having this class label */
 
     int argc = 3; /* cmd + FILTER + filter */
-    char * filter = NULL;
 
     if ((ret == asprintf(&filter, "class=%s", class)) != 0)
         goto fail;
@@ -1960,6 +1960,7 @@ static void ts_mrange (afb_req_t request) {
     size_t * argvlen = NULL;
     char * fromtsS = NULL;
     char * totsS = NULL;
+    char * filter = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:s!}",
         "class", &class,
@@ -1977,7 +1978,6 @@ static void ts_mrange (afb_req_t request) {
         totsS = "+";
     
     int argc = 5; /* cmd + fromts + tots + FILTER + filter */
-    char * filter = NULL;
 
     if ((ret = asprintf(&filter, "class=%s", class)) == -1)
         goto fail;
@@ -2035,8 +2035,6 @@ done:
     free(filter);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-
-
 }
 
 /* Attempts to use TS.CREATE, or TS.ALTER, to properly set the class label, blob flag, and duplication policy */
@@ -2333,6 +2331,7 @@ static int _key_aggregate(afb_req_t request, const char * key, json_object * arg
     char * dstkey;
     char * resstr = NULL;
     bool blob = false;
+    char * class_name = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:o!}",
         "class", &class,
@@ -2374,7 +2373,7 @@ static int _key_aggregate(afb_req_t request, const char * key, json_object * arg
     json_object_object_get_ex(labelsJ, "class", &parent_classJ);
 
     const char *parent_class = json_object_get_string(parent_classJ);
-    char *class_name = NULL;
+
     ret = asprintf(&class_name, "%s|%s", parent_class, name);
 
     json_object_object_del(labelsJ, "class");
