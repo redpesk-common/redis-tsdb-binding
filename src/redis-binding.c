@@ -2778,7 +2778,7 @@ static void connectCallback(const redisAsyncContext *c, int status) {
             AFB_API_ERROR(api, "Error: %s\n", c->errstr);
         logConnectionRefusedOnce = true;
 
-        usleep(200);
+        sleep(1);
         connectRedis(api);
         return;
     }
