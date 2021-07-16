@@ -1,8 +1,30 @@
+/*
+ Copyright (C) 2021 "IoT.bzh"
+ Author : Thierry Bultel <thierry.bultel@iot.bzh>
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
+
+
 #include "json2table.h"
 
 #include <string.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <sstream>
+#include <memory>
+
+#include "deflatten.h"
 
 #define MAX_PATH_LEN 128
 
@@ -19,7 +41,7 @@ static int _json2table(json_object *obj, struct cds_list_head *list, const char 
         type == json_type_int ||
         type == json_type_string)
     {
-        pair = malloc(sizeof(JSON_PAIR));
+        pair = (JSON_PAIR*) malloc(sizeof(JSON_PAIR));
         CDS_INIT_LIST_HEAD(&pair->node);
     }
 
@@ -56,10 +78,10 @@ static int _json2table(json_object *obj, struct cds_list_head *list, const char 
     }
     case json_type_array:
     {
-        int len = json_object_array_length(obj);
-        for (int ix = 0; ix < len; ix++)
+        size_t len = json_object_array_length(obj);
+        for (size_t ix = 0; ix < len; ix++)
         {
-            sprintf(_curpos, "%s[%d]", curpos, ix);
+            sprintf(_curpos, "%s[%d]", curpos, (int)ix);
             json_object *_obj = json_object_array_get_idx(obj, ix);
             _json2table(_obj, list, _curpos);
         }
@@ -76,9 +98,9 @@ static int _json2table(json_object *obj, struct cds_list_head *list, const char 
     return 0;
 }
 
-int json2table(const char *class, json_object *obj, struct cds_list_head *list)
+int json2table(const char *classname, json_object *obj, struct cds_list_head *list)
 {
-    return _json2table(obj, list, class);
+    return _json2table(obj, list, classname);
 }
 
 static json_object * redis_value_to_json(const redisReply * elem) {
@@ -106,129 +128,32 @@ static json_object * redis_value_to_json(const redisReply * elem) {
 }
 
 
-/* converts a flattened name (something like 'foo.bar[3].dum') into a json structure 
---- > 
-        { "bar": [ ?, ?, "dum": ? ] } 
-
-    and returns pointer to the targetted location (in the above case, the value associated to the "dum" key)
-    That location is always a 'single' value (not a composite object)
-
-    foo is skipped because it is the class name.
-
-    When the result is an array, index is set different of -1
-    When the result is an object, index is left to -1, and parent and key are set
-
-*/
-
-static void deflatten(char *name, json_object *obj, int * index, json_object ** parent, char ** key)
-{
-    char * ptr;
-    bool array = false;
-    int ret;
-    int _index = -1;
-
-    size_t namelen = strlen(name);
-    json_object * _obj = obj;
-    char *base = NULL;
-    bool once = false;
-    const char * eos = name+namelen;
-
-    for (ptr = name;; ptr = NULL) {
-
-        char *token = strtok(ptr, ".");
-
-        /* skip the first base, because it is the class name */
-        if (!once) {
-            once = true;
-            continue;
-        }
-
-        /* last token ? */
-        if (token == NULL) {
+static Json::Value redis_value_to_jsoncpp(const redisReply * elem) {
+    Json::Value v;
+    switch(elem->type) {
+        case REDIS_REPLY_INTEGER:
+            v = elem->integer;
+            break;
+        case REDIS_REPLY_STATUS: {
+            char * endptr;
+            double val = strtod(elem->str, &endptr);
+            if (elem->str == endptr) // conversion failed
+                v = elem->str;    
+            else {
+                v = val;
+            }
             break;
         }
-
-        _index = -1;
-        array = false;
-        bool end_of_parsing = false;
-
-        base = token;
-        char *closeb = NULL;
-
-        char *openb = strstr(token, "[");
-        if (openb)
-        {
-            closeb = strstr(openb, "]");
-            if (closeb)
-            {
-                ret = sscanf(openb, "[%d]", &_index);
-                if (ret == 1)
-                {
-                    base[openb - base] = '\0';
-                    array = true;
-                }
-            }
-        }
-
-        /* we use that logic because in case of brackets, the token is altered to avoid a copy */
-        if (closeb)
-            end_of_parsing = (closeb == eos - 1);
-        else
-            end_of_parsing = (token+strlen(token) == eos);
-
-        json_object *jvalue;
-
-        /* Does the current object exist ? If not, create it, if yes, use it */
-
-        if (json_object_object_get_ex(_obj, base, &jvalue)) {
-            _obj = jvalue;
-        }
-        else {
-
-            json_object *newobject;
-
-            if (array) {
-                newobject = json_object_new_array();
-                json_object_object_add(_obj, base, newobject);
-                _obj = newobject;
-            }
-            else if (!end_of_parsing) {
-                /* only the caller will add the key/value object */
-                newobject = json_object_new_object();
-                json_object_object_add(_obj, base, newobject);
-                _obj = newobject;
-            }
-        }
-
-        /* 
-            At this step, _obj points to an array, or an object.
-            If we are at the end of parsing, that means that the array element
-            will contain a simple value, not an object.
-        */
-
-        if (!array)
-            continue;
-
-        /* This is an array. If we are at the end of parsing, just return the array */
-
-        if (!end_of_parsing) {
-
-            json_object *elem = json_object_array_get_idx(_obj, _index);
-            if (elem == NULL) {
-                elem = json_object_new_object();
-                json_object_array_put_idx(_obj, _index, elem);
-            }
-
-            _obj = elem;
-            continue;
-        }
+        case REDIS_REPLY_STRING:
+            v = elem->str;
+            break;
+        default:
+            break;
     }
-
-    *parent = _obj;
-    *key = base;
-    *index = _index;
-   
+    return v;
 }
+
+
 
 /*
 Converts the output of 'ts.mget' request, that is to say a list of column names,
@@ -252,47 +177,43 @@ and associated last timestamp & value, to a json tree.
 Expected result is ==>
 
 {
-  "response":{
-    "sensor2": [ 
-        { "ts": 123456546546, "data" : [ "cool", "groovy", 6 ] },  
-    ]
+  "response":
+  {
+    "sensor2":    
+        { 
+            "ts": 123456546546, 
+           "data" : [ "cool", "groovy", 6 ] 
+        }
   }
 }
 
 */
 
-int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
-{
+
+extern "C"
+int mgetReply2Json(const redisReply *rep, const char *classname, json_object **res) {
     int ret = -1;
 
-    json_object *resobj = json_object_new_object();
-        
-    /* according to the documentation, each element is an array with 3 items:
-    1 - key name
-    2 - matching labels, when asked, else empty array
-    3 - [ (int)timestamp, (char*)value ]
-    */
+    Json::Value root;
+    std::stringstream ss;
+
+    Json::StreamWriterBuilder builder;
+    builder.settings_["precisionType"] = "decimal";
+    builder.settings_["precision"] = 5;
+    std::unique_ptr<Json::StreamWriter> writer(builder.newStreamWriter());
+
+    
+    Json::Value obj;
+    Json::Value ts;
+
+    redisReply *elem0;
 
     if (rep->elements == 0)
-        goto done;
+        goto fail;
 
-    json_object_object_add(resobj, "class", json_object_new_string(class));
-    json_object * sampledataJ = json_object_new_object();
-    json_object_object_add(resobj, "data", sampledataJ);
+    elem0 = rep->element[0];
 
-    redisReply *elem0 = rep->element[0];
-
-    /* might no have any timestamp yet */
-    if (elem0->elements >=2 ) {
-        redisReply *data0 = elem0->element[2];
-        if (data0->elements != 0) {
-            long long int timestamp = data0->element[0]->integer;
-            json_object_object_add(resobj, "ts", json_object_new_int64(timestamp));
-        }
-    }
-
-    for (int ix = 0; ix < rep->elements; ix++)
-    {
+    for (size_t ix = 0; ix < rep->elements; ix++) {
         redisReply *elem = rep->element[ix];
 
         if (elem->elements != 3)
@@ -309,32 +230,36 @@ int mgetReply2Json(const redisReply *rep, const char *class, json_object **res)
 
         redisReply *value = sample->element[1];
 
-        json_object * valueJ = redis_value_to_json(value);
+        Json::Value valueJ;
+
+        valueJ = redis_value_to_jsoncpp(value);
 
         /* converts composite name (something like 'foo.bar[3].dum') into a json structure */
+        deflatten(obj, name, valueJ);
 
-        int index = -1;
+        std::stringstream ss;
+        ss << obj;
 
-        json_object * parentJ;
-        char * key;
-
-        deflatten(name, sampledataJ, &index, &parentJ, &key);
-
-        // End of parsing. Update the pointed object with the given value.
-
-        if (index == -1) {
-            json_object_object_add(parentJ, key, valueJ);
+    }
+    
+    /* might not have any timestamp yet */
+    if (elem0->elements >=2 ) {
+        redisReply *data0 = elem0->element[2];
+        if (data0->elements != 0) {
+            long long int timestamp = data0->element[0]->integer;
+            root[classname]["ts"] = timestamp;
         }
-        else {
-            json_object_array_put_idx(parentJ, index, valueJ);
-        }
-     }
+    }
 
-done:
-    *res = resobj;
+    root[classname]["data"] = obj[classname];
+    writer->write(root, &ss);
+    *res = json_tokener_parse(ss.str().c_str());
+
     ret = 0;
+fail:    
     return ret;
 }
+
 
 
 
@@ -398,22 +323,31 @@ And the expected result is:
   }
 }
 
+Notice that, at the opposite of the reply format of a mget request,
+the column names are not 'deflattened'
+Namely, that would generate a noisy and inefficient output, on the one
+hand, and on the other hand, since one of the usage of mrange is to
+collect data to replicate it on another redis server, the steps
+would be to jsonify and then unjsonify the data names, which 
+is a non sense in term of performances.
 
 */
 
 
 
-int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** res) {
+int mrangeReply2Json(const redisReply * rep, const char * classname, json_object ** res) {
     int ret = -1;
 
     json_object * resobj = json_object_new_object();
     json_object * ts_array = json_object_new_array();
     json_object * column_array = json_object_new_array();
 
-    json_object_object_add(resobj, "class", json_object_new_string(class));  
+    json_object_object_add(resobj, "class", json_object_new_string(classname));  
     json_object_object_add(resobj, "ts", ts_array);
     json_object_object_add(resobj, "data", column_array);  
 
+    redisReply * column0;
+    redisReply * samples0;
 
     /* according to the documentation, each element is an array with 3 items:
     1 - key name
@@ -429,17 +363,17 @@ int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** 
     if (rep->elements == 0)
         goto done;
 
-    redisReply * column0 = rep->element[0];
-    redisReply * samples0 = column0->element[2];
+    column0 = rep->element[0];
+    samples0 = column0->element[2];
     
     // fill the timestamps header
-    for (int ix=0; ix< samples0->elements; ix++) {
+    for (size_t ix=0; ix< samples0->elements; ix++) {
         redisReply * sample = samples0->element[ix];
         uint64_t ts = sample->element[0]->integer;
         json_object_array_add(ts_array, json_object_new_int64(ts));
     }
 
-    for (int ix=0;ix< rep->elements;ix++) {
+    for (size_t ix=0;ix< rep->elements;ix++) {
         redisReply * column = rep->element[ix];
         redisReply * samples = column->element[2];
 
@@ -452,7 +386,7 @@ int mrangeReply2Json(const redisReply * rep, const char * class, json_object ** 
         json_object_array_add(columnJ, json_object_new_string(column_name));
         json_object_array_add(columnJ, valuesJ);
 
-        for (int jx = 0; jx < samples->elements; jx++) {
+        for (size_t jx = 0; jx < samples->elements; jx++) {
             redisReply * sample = samples->element[jx];
             json_object_array_add(valuesJ, redis_value_to_json(sample->element[1]));
         }

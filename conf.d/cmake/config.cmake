@@ -80,6 +80,7 @@ set (PKG_REQUIRED_LIST
 	afb-libhelpers
 	afb-libcontroller
 	hiredis
+	jsoncpp
 )
 
 # Prefix path where will be installed the files

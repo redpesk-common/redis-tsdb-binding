@@ -19,7 +19,7 @@
 # Add target to project dependency list
 PROJECT_TARGET_ADD(redis-binding)
 
-file(GLOB SOURCE_FILES "*.c")
+file(GLOB SOURCE_FILES "*.c" "*.cpp")
 
 set( JSON_INFO_C ${CMAKE_CURRENT_BINARY_DIR}/json_info.c)
 

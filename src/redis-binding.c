@@ -1,3 +1,19 @@
+/*
+ Copyright (C) 2021 "IoT.bzh"
+ Author : Thierry Bultel <thierry.bultel@iot.bzh>
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+   http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+*/
 
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -380,6 +396,7 @@ done:
 
 static int redisReplyToJson(afb_req_t request, const redisReply* reply, json_object ** replyJ ) {
     int ret = -EINVAL;
+
     if (!reply)
         goto fail;
     if (!replyJ)
@@ -2285,14 +2302,10 @@ to:
 
 static json_object* ts_info_labels_to_create_labels(json_object * infoLabelsJ) {
 
-    fprintf(stderr, "converting labels %s\n", json_object_get_string(infoLabelsJ));
-
     json_object * result = json_object_new_object();
 
     for (int ix=0; ix<json_object_array_length(infoLabelsJ); ix++) {
         json_object* labelJ = json_object_array_get_idx(infoLabelsJ, ix);
-
-        fprintf(stderr, "converting label %s\n", json_object_get_string(labelJ));
 
         if (json_object_array_length(labelJ) != 2) {
             fprintf(stderr, "wrong size\n");
