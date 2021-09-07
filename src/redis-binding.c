@@ -683,7 +683,7 @@ static void redis_del(afb_req_t request) {
     if (json_object_get_type(keyJ) == json_type_string) {
         nbargs++;
     } else if (json_object_get_type(keyJ) == json_type_array) {
-        nbargs+= json_object_array_length(keyJ);
+        nbargs+= (int)json_object_array_length(keyJ);
     } else {
         err = asprintf(&resstr, "wrong json type in '%s'", json_object_get_string(keyJ));
         goto fail;
@@ -705,7 +705,7 @@ static void redis_del(afb_req_t request) {
         }
 
     } else if (json_object_get_type(keyJ) == json_type_array) {
-        int nbelems = json_object_array_length(keyJ);
+        int nbelems = (int)json_object_array_length(keyJ);
 
         for (int ix = 0; ix < nbelems; ix++) {
             json_object * elem = json_object_array_get_idx(keyJ, ix);
@@ -1082,7 +1082,7 @@ static void redis_madd (afb_req_t request) {
 
     } else if (json_object_get_type(argsJ) == json_type_array) {
 
-        int nbelems = json_object_array_length(argsJ);
+        int nbelems = (int)json_object_array_length(argsJ);
         nbargs = 1 + 3*nbelems;
 
         if ((ret =_allocate_argv_argvlen(nbargs, &argv, &argvlen)) != 0)
@@ -1493,7 +1493,7 @@ static void _redis_mrange (afb_req_t request, bool forward) {
 
     if (filterJ) {
         argc++;
-        argc += json_object_array_length(filterJ);
+        argc += (int)json_object_array_length(filterJ);
     }
 
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
@@ -1647,7 +1647,7 @@ static void redis_mget (afb_req_t request) {
     
     if (filterJ) {
         argc++;
-        argc += json_object_array_length(filterJ);
+        argc += (int)json_object_array_length(filterJ);
     }
 
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
@@ -1771,7 +1771,7 @@ static void redis_queryindex (afb_req_t request) {
 
     if (filterJ) {
         argc++;
-        argc += json_object_array_length(filterJ);
+        argc += (int)json_object_array_length(filterJ);
     }
 
     if ((ret = _allocate_argv_argvlen(argc, &argv, &argvlen)) != 0)
@@ -2157,8 +2157,8 @@ static void ts_minsert (afb_req_t request) {
 
     /* The number of sample values must match the number of timestamps */
 
-    nbts = json_object_array_length(timestampsTableJ);
-    uint32_t nbkeys = json_object_array_length(dataJ);
+    nbts = (uint32_t)json_object_array_length(timestampsTableJ);
+    uint32_t nbkeys = (uint32_t)json_object_array_length(dataJ);
 
     /* compute the 'converted to string' timestamp once */
     tsArray = (char**) calloc(nbts, sizeof(char*));
@@ -2201,7 +2201,7 @@ static void ts_minsert (afb_req_t request) {
             goto fail;
         }
 
-        int nbvalues = json_object_array_length(valuesJ);
+        int nbvalues = (int)json_object_array_length(valuesJ);
         if (nbvalues != nbts) {
             err = asprintf(&resstr, "json error: key '%s' should have %d values", key, nbts);
             goto fail;
