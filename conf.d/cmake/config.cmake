@@ -81,6 +81,7 @@ set (PKG_REQUIRED_LIST
 	afb-libcontroller
 	hiredis
 	jsoncpp
+	cmake_afb_templates>=10.0.4
 )
 
 # Prefix path where will be installed the files
