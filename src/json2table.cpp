@@ -132,7 +132,7 @@ static Json::Value redis_value_to_jsoncpp(const redisReply * elem) {
     Json::Value v;
     switch(elem->type) {
         case REDIS_REPLY_INTEGER:
-            v = (int64_t) elem->integer;
+            v = (Json::Int64) elem->integer;
             break;
         case REDIS_REPLY_STATUS: {
             char * endptr;
@@ -246,7 +246,7 @@ int mgetReply2Json(const redisReply *rep, const char *classname, json_object **r
     if (elem0->elements >=2 ) {
         redisReply *data0 = elem0->element[2];
         if (data0->elements != 0) {
-            int64_t timestamp = data0->element[0]->integer;
+            Json::Int64 timestamp = data0->element[0]->integer;
             root[classname]["ts"] = timestamp;
         }
     }
