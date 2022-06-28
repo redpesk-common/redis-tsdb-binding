@@ -276,9 +276,9 @@
                     ]
                 },
                 {
-                    "uid":"info",
-                    "info":"Gets information about a key",
-                    "verb":"info",
+                    "uid":"redis_info",
+                    "info":"Gets information about a key via TS.INFO",
+                    "verb":"redis_info",
                     "usage": {
                         "key":"key name"
                     },
