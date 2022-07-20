@@ -77,7 +77,7 @@ set (PKG_REQUIRED_LIST
 	libmicrohttpd>=0.9.55
 	uuid
 	liburcu
-	afb-libhelpers
+	afb-helpers
 	afb-libcontroller
 	hiredis
 	jsoncpp
