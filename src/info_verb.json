@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "uid": "tsbd",
+        "uid": "tsdb",
         "info": "Time Series Database Binding",
         "version": "1.0"
     },
