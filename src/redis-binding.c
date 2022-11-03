@@ -20,6 +20,7 @@
 #include <string.h>
 #include <time.h>
 
+#include <afb-binding.h>
 #include <wrap-json.h>
 #include <ctl-config.h>
 
@@ -1860,12 +1861,13 @@ static void ts_jinsert (afb_req_t request) {
 #endif
 
         if (pair->type == VALUE_TYPE_DOUBLE) {
-            if ((ret = internal_redis_add_double(request, pair->key, pair->d.value, _timestampS, class, &resstr)) != 0)
-                goto fail;
+            ret = internal_redis_add_double(request, pair->key, pair->d.value, _timestampS, class, &resstr);
         } else {
-            if ((ret = internal_redis_add_string(request, pair->key, pair->d.s, _timestampS, class, &resstr)) != 0)
-                goto fail;
+            ret = internal_redis_add_string(request, pair->key, pair->d.s, _timestampS, class, &resstr);
         }
+	if (ret != 0) {
+            goto fail;
+	}
     }
 
     afb_req_success(request, replyJ, resstr);
