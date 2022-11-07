@@ -74,7 +74,6 @@ set (PKG_REQUIRED_LIST
 	json-c
 	libsystemd>=222
 	afb-binding
-	libmicrohttpd>=0.9.55
 	uuid
 	liburcu
 	afb-helpers
