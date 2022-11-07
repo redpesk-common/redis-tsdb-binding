@@ -64,8 +64,6 @@ static void ctrlapi_ping (afb_req_t request) {
     count++;
     AFB_REQ_NOTICE (request, "Controller:ping count=%d", count);
     afb_req_success(request,json_object_new_int(count), NULL);
-
-    return;
 }
 
 static int _redisPutStr(afb_req_t request, const char * str, int * argc, char ** argv, size_t * argvlen) {
@@ -663,7 +661,6 @@ fail:
 
 done:
     free(resstr);
-    return;
 }
 
 
@@ -746,7 +743,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-
 }
 
 
@@ -831,8 +827,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-
-    return;
 }
 
 static int internal_redis_add_cmd(afb_req_t request, const char * key, const char * timestampS, int * argc, char ** argv, size_t * argvlen) {
@@ -1028,7 +1022,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
 }
 
 static int _redis_get_ts_value(afb_req_t request, json_object * v, int * argc, char ** argv, size_t * argvlen) {
@@ -1131,7 +1124,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
 }
 
 
@@ -1221,7 +1213,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
 }
 
 
@@ -1313,7 +1304,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-
 }
 
 
@@ -1395,8 +1385,6 @@ fail:
 
 done:
     free(resstr);
-    return;
-
 }
 
 static void redis_delete_rule (afb_req_t request) {
@@ -1452,8 +1440,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
-
 }
 
 static void _redis_mrange (afb_req_t request, bool forward) {
@@ -1559,8 +1545,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
-
 }
 
 static void redis_mrange (afb_req_t request) {
@@ -1623,8 +1607,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
-
 }
 
 static void redis_mget (afb_req_t request) {
@@ -1691,8 +1673,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-    return;
-
 }
 
 static int _redis_info(afb_req_t request, const char * key, json_object ** replyJ, char ** resstr) {
@@ -1754,7 +1734,6 @@ fail:
 
 done:
     free(resstr);
-    return;
 }
 
 static void redis_queryindex (afb_req_t request) {
@@ -1810,8 +1789,6 @@ done:
 
     free(resstr);
     argvCleanup(argc, argv, argvlen);
-
-    return;
 }
 
 
@@ -1891,8 +1868,6 @@ done:
     free(resstr);
     if (timestampS == NULL)
         free(_timestampS);
-
-    return;
 }
 
 
@@ -2118,7 +2093,6 @@ done:
 fail:
     argvCleanup(argc, argv, argvlen);
     return ret;
-
 }
 
 /*
@@ -2144,6 +2118,9 @@ static void ts_minsert (afb_req_t request) {
     char * resstr = NULL;
     char * class;
     uint32_t nbts = 0;
+    char ** argv = NULL;
+    size_t * argvlen = NULL;
+    int argc = 0;
 
     json_object * timestampsTableJ;
     json_object * dataJ;
@@ -2222,12 +2199,10 @@ static void ts_minsert (afb_req_t request) {
         }
         for (int jx=0; jx < nbvalues; jx++)  {
             
-            char ** argv = NULL;
-            size_t * argvlen = NULL;
             resstr = NULL;
             int ret;
 
-            int argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestamp, 1 for value */
+            argc = 4; /* 1 slot for command name, 1 for the key, 1 for timestamp, 1 for value */
 
             json_object * valueJ = json_object_array_get_idx(valuesJ, jx);
             json_type type = json_object_get_type(valueJ);
@@ -2267,8 +2242,6 @@ static void ts_minsert (afb_req_t request) {
             if ((ret = redisSendCmd(request, argc, (const char **)argv, argvlen, NULL, &resstr)) != 0)
                 goto fail;
             
-            argvCleanup(argc, argv, argvlen);
-
         }
 
     }
@@ -2279,12 +2252,11 @@ static void ts_minsert (afb_req_t request) {
 fail:
     afb_req_fail(request, "error", resstr);
 done:
+    argvCleanup(argc, argv, argvlen);
     if (tsArray)
         for (int ix=0; ix<nbts;ix++)
             free(tsArray[ix]);
     free(tsArray);
-    return;
-
 }
 
 static json_object * ts_info_get_field(json_object* infoJ, const char * fieldS) {
@@ -2500,8 +2472,6 @@ fail:
 done:
     free(agg_classname);
     free(resstr);
-    return;
-
 }
 
 /* Get all the keys of the given class */
@@ -2563,6 +2533,7 @@ static int _key_del(afb_req_t request, const char * key, json_object * not_used)
 fail:
     if (rep != NULL)
         freeReplyObject(rep);
+    argvCleanup(argc, argv, argvlen);
     return ret;
 
 }
@@ -2599,8 +2570,6 @@ fail:
 
 done:
     free(resstr);
-    return;
-
 }
 
 extern const char * info_verbS;
@@ -2615,8 +2584,6 @@ static void infoVerb (afb_req_t request) {
         return;
     }
     afb_req_success(request, infoArgsJ, NULL);
-    return;
-
 }
 
 static afb_verb_t CtrlApiVerbs[] = {
