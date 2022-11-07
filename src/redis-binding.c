@@ -37,7 +37,6 @@
 #define API_REPLY_SUCCESS "success"
 #define API_REPLY_FAILURE "failed"
 
-
 // #define DEBUG
 
 // default api to print log when apihandle not available
@@ -338,10 +337,13 @@ static redisReply * get_class_keys(afb_req_t request, const char * class);
 
 /* returns the number of keys in a given class */
 static uint32_t get_nb_keys(afb_req_t request, const char * class) {
+    uint32_t result = 0;
     redisReply * keys = get_class_keys(request, class);
-    if (keys == NULL)
-        return 0;
-    return (uint32_t) keys->elements;
+    if (keys != NULL) {
+        result = keys->elements;
+        freeReplyObject(keys);
+    }
+    return result;
 }
 
 
@@ -366,9 +368,11 @@ static int class_keys_for_each(afb_req_t request, const char* class, key_func fu
 
         int _ret = func(request, key, param);
         if (_ret == -1) {
-            return -1;
+	    ret = -1;
+	    break;
         }
     }
+    freeReplyObject(keys);
 
 done:
     return ret;
@@ -473,7 +477,7 @@ done:
 
 /* redisCommandArgv does not check the null pointer ! */
 
-static void * __redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) {
+static redisReply * __redisCommandArgv(redisContext *c, int argc, const char **argv, const size_t *argvlen) {
     redisReply * rep = NULL;
     if (c == NULL)
         goto fail;
@@ -485,6 +489,7 @@ fail:
 
 static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const size_t * argvlen, json_object ** replyJ, char ** resstr) {
     int ret = -EINVAL;
+    redisReply * rep = NULL;
 
 #ifdef DEBUG
     _redisDisplayCmd(request, argc, argv);
@@ -493,7 +498,7 @@ static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const s
     if (resstr)
         *resstr = NULL;
 
-    redisReply * rep = __redisCommandArgv(syncRedisContext, argc, argv, argvlen);
+    rep = __redisCommandArgv(syncRedisContext, argc, argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(resstr, "redis-error: redis command failed");
         if (ret == -1)
@@ -526,7 +531,10 @@ static int redisSendCmd(afb_req_t request, int argc, const char ** argv, const s
 
 done:
     ret = 0;
+
 fail:    
+    if (rep != NULL)
+        freeReplyObject(rep);
     return ret;
 }
 
@@ -1899,6 +1907,7 @@ static void ts_mget (afb_req_t request) {
     char ** argv = NULL;
     size_t * argvlen = NULL;
     char * filter = NULL;
+    redisReply * rep = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s !}",
         "class", &class );
@@ -1927,7 +1936,7 @@ static void ts_mget (afb_req_t request) {
     if ((ret = _redisPutStr(request, filter, &argc, argv, argvlen)) != 0)
         goto fail;
 
-    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
+    rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(&resstr, "redis-error: redis command failed");
         goto fail;
@@ -1958,12 +1967,12 @@ fail:
     free(replyJ);
 
 done:
+    if (rep != NULL)
+        freeReplyObject(rep);
     free(filter);
     free(resstr);
 
     argvCleanup(argc, argv, argvlen);
-
-    return;
 }
 
 
@@ -1980,6 +1989,7 @@ static void ts_mrange (afb_req_t request) {
     char * fromtsS = NULL;
     char * totsS = NULL;
     char * filter = NULL;
+    redisReply * rep = NULL;
 
     int err = wrap_json_unpack(argsJ, "{s:s, s:s, s:s!}",
         "class", &class,
@@ -2020,7 +2030,7 @@ static void ts_mrange (afb_req_t request) {
     if ((ret = _redisPutStr(request, filter, &argc, argv, argvlen)) != 0)
         goto fail;
 
-    redisReply * rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
+    rep = __redisCommandArgv(syncRedisContext, argc,  (const char **)argv, argvlen);
     if (rep == NULL) {
         ret = asprintf(&resstr, "redis-error: redis command failed");
         goto fail;
@@ -2051,6 +2061,8 @@ fail:
     afb_req_fail(request, "error", resstr);
 
 done:
+    if (rep != NULL)
+        freeReplyObject(rep);
     free(filter);
     free(resstr);
     argvCleanup(argc, argv, argvlen);
@@ -2549,6 +2561,8 @@ static int _key_del(afb_req_t request, const char * key, json_object * not_used)
 
     ret = 0;
 fail:
+    if (rep != NULL)
+        freeReplyObject(rep);
     return ret;
 
 }
