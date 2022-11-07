@@ -465,7 +465,7 @@ nomem:
     ret = -ENOMEM;
 fail:
     if (*replyJ)
-        free(*replyJ);
+        json_object_put(*replyJ);
 
 done:
     return ret;
