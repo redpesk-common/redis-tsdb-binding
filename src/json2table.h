@@ -38,7 +38,7 @@ typedef struct {
     char * key;
     union  {
         double value;
-        const char * s;
+        char * s;
     } d;
 } JSON_PAIR;
 

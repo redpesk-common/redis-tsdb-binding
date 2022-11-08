@@ -1868,6 +1868,15 @@ done:
     free(resstr);
     if (timestampS == NULL)
         free(_timestampS);
+
+    while (!cds_list_empty(&list)) {
+	pair = cds_list_entry(list.next, JSON_PAIR, node);
+	cds_list_del(list.next);
+	if (pair->type == VALUE_TYPE_BLOB)
+		free(pair->d.s);
+	free(pair->key);
+	free(pair);
+    }
 }
 
 
