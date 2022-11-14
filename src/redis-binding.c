@@ -1076,6 +1076,9 @@ static void redis_madd (afb_req_t request) {
         if ((ret=_allocate_argv_argvlen(nbargs, &argv, &argvlen)) != 0)
             goto fail;
 
+        if ((ret = redisPutCmd(request, "TS.MADD", &argc, argv, argvlen)) != 0)
+            goto fail;
+
         ret = _redis_get_ts_value(request, argsJ, &argc, argv, argvlen);
         if (ret == -EINVAL) {
             ret = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
@@ -1088,6 +1091,9 @@ static void redis_madd (afb_req_t request) {
         nbargs = 1 + 3*nbelems;
 
         if ((ret =_allocate_argv_argvlen(nbargs, &argv, &argvlen)) != 0)
+            goto fail;
+
+        if ((ret = redisPutCmd(request, "TS.MADD", &argc, argv, argvlen)) != 0)
             goto fail;
 
         for (int ix = 0; ix < nbelems; ix++) {
@@ -1103,10 +1109,6 @@ static void redis_madd (afb_req_t request) {
         ret = asprintf(&resstr , "wrong json type in '%s'", json_object_get_string(argsJ));
         goto fail;
     }
-
-    argc = 0;
-    if ((ret = redisPutCmd(request, "TS.MADD", &argc, argv, argvlen)) != 0)
-        goto fail;
 
     if ((ret = redisSendCmd(request, nbargs, (const char **)argv, argvlen, NULL, &resstr)) != 0)
         goto fail;
