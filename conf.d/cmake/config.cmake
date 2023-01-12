@@ -20,7 +20,7 @@
 # Project Info
 # ------------------
 set(PROJECT_NAME redis-tsdb-binding)
-set(PROJECT_VERSION 1.0)
+set(PROJECT_VERSION 1.1.0)
 set(PROJECT_PRETTY_NAME "Timeseries DB Binding of the Redis Plugin")
 set(PROJECT_DESCRIPTION "Binding of the redis plugin: Redis Time Series database")
 set(PROJECT_URL "https://github.com/redpesk-common/redis-tsdb-binding")
