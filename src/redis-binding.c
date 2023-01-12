@@ -1476,6 +1476,10 @@ static void _redis_mrange (afb_req_t request, bool forward) {
         err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
         goto fail;
     }
+    if (!json_object_is_type(filterJ, json_type_array)) {
+        err = asprintf(&resstr, "filter isn't an array: %s", json_object_get_string(filterJ));
+        goto fail;
+    }
 
     int argc = 3; // cmd, fromts, tots
 
@@ -1632,6 +1636,10 @@ static void redis_mget (afb_req_t request) {
         err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
         goto fail;
     }
+    if (!json_object_is_type(filterJ, json_type_array)) {
+        err = asprintf(&resstr, "filter isn't an array: %s", json_object_get_string(filterJ));
+        goto fail;
+    }
 
     int argc = 1; // cmd
     
@@ -1754,6 +1762,10 @@ static void redis_queryindex (afb_req_t request) {
         "filter", &filterJ );
     if (err) {
         err = asprintf(&resstr, "json error in '%s'", json_object_get_string(argsJ));
+        goto fail;
+    }
+    if (!json_object_is_type(filterJ, json_type_array)) {
+        err = asprintf(&resstr, "filter isn't an array: %s", json_object_get_string(filterJ));
         goto fail;
     }
 
